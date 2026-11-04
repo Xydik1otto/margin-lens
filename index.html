@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Margin Lens — калькулятор зборів та маржі</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --fg:#e6e9ef; --muted:#8b93a3; --accent:#4f8cff; --good:#3ecf8e; --bad:#ff6b6b; --border:#2a2f3a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; padding:24px; max-width:1100px; margin:0 auto; }
+  h1 { font-size:1.5rem; margin-bottom:4px; }
+  .sub { color:var(--muted); font-size:.9rem; margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  @media(max-width:800px){ .grid{grid-template-columns:1fr;} }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .card h2 { font-size:1rem; margin-bottom:12px; }
+  label { display:block; font-size:.8rem; color:var(--muted); margin:8px 0 3px; }
+  input, select, textarea { width:100%; background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:.95rem; }
+  input:focus, select:focus, textarea:focus { outline:1px solid var(--accent); }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:9px 16px; font-size:.9rem; cursor:pointer; }
+  button.secondary { background:var(--border); }
+  button:hover { filter:brightness(1.1); }
+  .metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px; }
+  .metric { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px; }
+  .metric .v { font-size:1.3rem; font-weight:700; }
+  .metric .k { font-size:.75rem; color:var(--muted); }
+  .pos { color:var(--good); } .neg { color:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; margin-top:8px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { padding:6px 12px; font-size:.8rem; }
+  .tabs button.active { background:var(--accent); }
+  .hidden { display:none; }
+  .muted { color:var(--muted); font-size:.8rem; }
+  input[type=range] { padding:0; }
+  .scenario { display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border); font-size:.85rem; cursor:pointer; }
+  .scenario:hover { background:var(--bg); }
+</style>
+</head>
+<body>
+<h1>Margin Lens</h1>
+<p class="sub">Калькулятор зборів та реальної маржі для Etsy / Shopify / Amazon. Дані зберігаються локально (localStorage) — ніякого бекенду.</p>
+
+<div class="tabs">
+  <button id="tab-calc" class="active" onclick="showTab('calc')">Калькулятор</button>
+  <button id="tab-batch" onclick="showTab('batch')">Batch CSV</button>
+  <button id="tab-compare" onclick="showTab('compare')">Порівняння каналів</button>
+  <button id="tab-scenarios" onclick="showTab('scenarios')">Сценарії</button>
+</div>
+
+<!-- CALCULATOR -->
+<div id="panel-calc">
+<div class="grid">
+  <div class="card">
+    <h2>Вхідні дані</h2>
+    <label>Платформа</label>
+    <select id="platform" onchange="render()">
+      <option value="etsy">Etsy</option>
+      <option value="shopify">Shopify</option>
+      <option value="amazon">Amazon</option>
+    </select>
+    <div class="row">
+      <div><label>Ціна товару ($)</label><input id="price" type="number" step="0.01" value="30.00" oninput="render()"></div>
+      <div><label>Собівартість ($)</label><input id="cost" type="number" step="0.01" value="8.00" oninput="render()"></div>
+    </div>
+    <div class="row">
+      <div><label>Доставка: ви платите ($)</label><input id="shipPaid" type="number" step="0.01" value="4.00" oninput="render()"></div>
+      <div><label>Доставка: покупець платить ($)</label><input id="shipCharged" type="number" step="0.01" value="5.00" oninput="render()"></div>
+    </div>
+    <div class="row">
+      <div><label>VAT/PDV (%)</label><input id="vat" type="number" step="0.1" value="0" oninput="render()"></div>
+      <div><label>Кількість в замовленні</label><input id="units" type="number" step="1" min="1" value="1" oninput="render()"></div>
+    </div>
+    <div id="etsyOpts">
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <input id="offsite" type="checkbox" style="width:auto" onchange="render()"> Offsite Ads (15%)
+      </label>
+    </div>
+    <div id="shopifyOpts" class="hidden">
+      <div class="row">
+        <div><label>Місячна підписка ($)</label><input id="monthlyFee" type="number" step="0.01" value="39" oninput="render()"></div>
+        <div><label>Замовлень/місяць</label><input id="monthlyOrders" type="number" step="1" value="100" oninput="render()"></div>
+      </div>
+    </div>
+    <div id="amazonOpts" class="hidden">
+      <label>Категорія Amazon (referral %)</label>
+      <select id="amazonCat" onchange="render()"></select>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <input id="perItemFee" type="checkbox" style="width:auto" onchange="render()"> Індивідуальний план ($0.99/товар)
+      </label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Результат</h2>
+    <div class="metrics" id="metrics"></div>
+    <div id="feesBreakdown" style="margin-top:12px"></div>
+    <label style="margin-top:14px">What if: підняти ціну на <span id="raiseLbl">0</span>%</label>
+    <input id="raiseSlider" type="range" min="0" max="50" step="1" value="0" oninput="render()">
+    <div id="whatif" class="muted" style="margin-top:4px"></div>
+    <button style="margin-top:12px" onclick="saveScenario()">💾 Зберегти сценарій</button>
+  </div>
+</div>
+</div>
+
+<!-- BATCH -->
+<div id="panel-batch" class="hidden">
+  <div class="card">
+    <h2>Batch-режим: вставте CSV</h2>
+    <p class="muted">Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, vat_percent, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]</p>
+    <textarea id="csv" rows="6" spellcheck="false">name,platform,price,product_cost,shipping_paid,shipping_charged,offsite_ads,vat_percent
+mug,etsy,30,8,4,5,true,0
+tshirt,shopify,25,10,3,0,false,0
+speaker,amazon,60,25,6,0,false,0</textarea>
+    <button style="margin-top:10px" onclick="runBatch()">Розрахувати</button>
+    <div id="batchOut"></div>
+  </div>
+</div>
+
+<!-- COMPARE -->
+<div id="panel-compare" class="hidden">
+  <div class="card">
+    <h2>Порівняння каналів side-by-side</h2>
+    <p class="muted">Один товар — три платформи.</p>
+    <div id="compareOut"></div>
+  </div>
+</div>
+
+<!-- SCENARIOS -->
+<div id="panel-scenarios" class="hidden">
+  <div class="card">
+    <h2>Збережені сценарії (localStorage)</h2>
+    <div id="scenariosList"></div>
+    <button class="secondary" style="margin-top:10px" onclick="if(confirm('Видалити всі сценарії?')){localStorage.removeItem('ml_scenarios');renderScenarios();}">Очистити все</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+// Fee structures — mirror of core/fees.py (tested by pytest)
+const ETSY = { listing:0.20, transaction:0.065, payPct:0.03, payFixed:0.25, offsiteAds:0.15 };
+const SHOPIFY = { payPct:0.029, payFixed:0.30 };
+const AMAZON_REFERRAL = { default:0.15, electronics:0.08, home_kitchen:0.15, clothing:0.17, books:0.15, toys_games:0.15, beauty:0.08, grocery:0.18, jewelry:0.20, furniture:0.15 };
+const AMAZON_PER_ITEM = 0.99;
+const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
+
+const $ = id => document.getElementById(id);
+const num = id => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
+const money = v => (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
+
+// Populate Amazon category select
+for (const [k, lbl] of Object.entries(CAT_LABELS)) {
+  const o = document.createElement("option"); o.value = k; o.textContent = lbl; $("amazonCat").appendChild(o);
+}
+
+function readInputs() {
+  return {
+    platform: $("platform").value,
+    price: num("price"), product_cost: num("cost"),
+    shipping_paid: num("shipPaid"), shipping_charged: num("shipCharged"),
+    offsite_ads: $("offsite").checked,
+    vat_percent: num("vat"),
+    shopify_monthly_fee: num("monthlyFee"), shopify_monthly_orders: num("monthlyOrders"),
+    amazon_category: $("amazonCat").value,
+    amazon_per_item_fee: $("perItemFee").checked,
+    units: Math.max(1, Math.round(num("units")) || 1),
+  };
+}
+
+function feesFor(inp) {
+  const base = inp.price + inp.shipping_charged;
+  const fees = {};
+  if (inp.platform === "etsy") {
+    fees["Listing fee"] = ETSY.listing * inp.units;
+    fees["Transaction 6.5%"] = ETSY.transaction * base;
+    fees["Payment 3% + $0.25"] = ETSY.payPct * base + ETSY.payFixed;
+    if (inp.offsite_ads) fees["Offsite Ads 15%"] = ETSY.offsiteAds * base;
+  } else if (inp.platform === "shopify") {
+    fees["Payment 2.9% + $0.30"] = SHOPIFY.payPct * base + SHOPIFY.payFixed;
+    if (inp.shopify_monthly_fee > 0 && inp.shopify_monthly_orders > 0)
+      fees["Місячна підписка (частка)"] = inp.shopify_monthly_fee / inp.shopify_monthly_orders * inp.units;
+  } else if (inp.platform === "amazon") {
+    const pct = AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default;
+    fees["Referral " + (pct * 100).toFixed(0) + "%"] = pct * base;
+    if (inp.amazon_per_item_fee) fees["Per-item $0.99"] = AMAZON_PER_ITEM * inp.units;
+  } else throw new Error("unknown platform");
+  return fees;
+}
+
+function pctTotal(inp) {
+  let p = 0;
+  if (inp.platform === "etsy") { p = ETSY.transaction + ETSY.payPct + (inp.offsite_ads ? ETSY.offsiteAds : 0); }
+  else if (inp.platform === "shopify") { p = SHOPIFY.payPct; }
+  else if (inp.platform === "amazon") { p = AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default; }
+  return p + inp.vat_percent / 100;
+}
+
+function fixedFees(inp) {
+  if (inp.platform === "etsy") return ETSY.listing * inp.units + ETSY.payFixed;
+  if (inp.platform === "shopify") {
+    let f = SHOPIFY.payFixed;
+    if (inp.shopify_monthly_fee > 0 && inp.shopify_monthly_orders > 0)
+      f += inp.shopify_monthly_fee / inp.shopify_monthly_orders * inp.units;
+    return f;
+  }
+  return inp.platform === "amazon" && inp.amazon_per_item_fee ? AMAZON_PER_ITEM * inp.units : 0;
+}
+
+function breakeven(inp) {
+  const denom = 1 - pctTotal(inp);
+  if (denom <= 1e-9) return null;
+  const need = inp.product_cost + inp.shipping_paid + fixedFees(inp);
+  return Math.max(0, need / denom - inp.shipping_charged);
+}
+
+function calculate(inp) {
+  const revenue = inp.price + inp.shipping_charged;
+  const fees = feesFor(inp);
+  const totalFees = Object.values(fees).reduce((a, b) => a + b, 0);
+  const vat = revenue * inp.vat_percent / 100;
+  const net = revenue - totalFees - vat - inp.product_cost - inp.shipping_paid;
+  return {
+    revenue, fees, totalFees, vat, net,
+    margin: revenue > 0 ? net / revenue * 100 : 0,
+    breakeven: breakeven(inp),
+  };
+}
+
+function showTab(name) {
+  for (const t of ["calc", "batch", "compare", "scenarios"]) {
+    $("panel-" + t).classList.toggle("hidden", t !== name);
+    $("tab-" + t).classList.toggle("active", t === name);
+  }
+  if (name === "scenarios") renderScenarios();
+}
+
+function render() {
+  $("etsyOpts").classList.toggle("hidden", $("platform").value !== "etsy");
+  $("shopifyOpts").classList.toggle("hidden", $("platform").value !== "shopify");
+  $("amazonOpts").classList.toggle("hidden", $("platform").value !== "amazon");
+
+  const inp = readInputs();
+  const r = calculate(inp);
+  const cls = v => v >= 0 ? "pos" : "neg";
+  $("metrics").innerHTML = `
+    <div class="metric"><div class="v ${cls(r.net)}">${money(r.net)}</div><div class="k">Net profit</div></div>
+    <div class="metric"><div class="v ${cls(r.margin)}">${r.margin.toFixed(1)}%</div><div class="k">Margin</div></div>
+    <div class="metric"><div class="v">${r.breakeven === null ? "—" : money(r.breakeven)}</div><div class="k">Breakeven ціна</div></div>
+    <div class="metric"><div class="v">${money(r.totalFees + r.vat)}</div><div class="k">Збори + податок</div></div>`;
+  $("feesBreakdown").innerHTML = "<table><tr><th>Компонент</th><th>Сума</th></tr>" +
+    Object.entries(r.fees).map(([k, v]) => `<tr><td>${k}</td><td>${money(v)}</td></tr>`).join("") +
+    (r.vat > 0 ? `<tr><td>VAT/PDV</td><td>${money(r.vat)}</td></tr>` : "") +
+    `<tr><td><b>Всього зборів</b></td><td><b>${money(r.totalFees)}</b></td></tr></table>`;
+
+  const deltaPct = num("raiseSlider");
+  $("raiseLbl").textContent = deltaPct;
+  if (deltaPct > 0) {
+    const raised = calculate({ ...inp, price: inp.price * (1 + deltaPct / 100) });
+    $("whatif").textContent = `Net: ${money(raised.net)} (margin ${raised.margin.toFixed(1)}%) — +${money(raised.net - r.net)} до поточного`;
+  } else $("whatif").textContent = "Пересуньте слайдер, щоб побачити вплив підвищення ціни";
+}
+
+function runBatch() {
+  const text = $("csv").value.trim();
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) { $("batchOut").innerHTML = "<p class='muted'>Додайте заголовок і хоч один рядок.</p>"; return; }
+  const header = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const idx = n => header.indexOf(n);
+  const req = ["platform", "price", "product_cost", "shipping_paid", "shipping_charged"];
+  if (req.some(c => idx(c) < 0)) { $("batchOut").innerHTML = "<p class='neg'>Немає обов'язкових колонок: " + req.join(", ") + "</p>"; return; }
+  const get = (row, n, d) => { const i = idx(n); const v = i >= 0 && row[i] !== undefined && row[i].trim() !== "" ? row[i].trim() : d; return v; };
+  const flag = (row, n) => ["1","true","yes","y","так","on"].includes(get(row, n, "").toLowerCase());
+  let html = "<table><tr><th>Назва</th><th>Платформа</th><th>Revenue</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>";
+  let count = 0;
+  for (const line of lines.slice(1)) {
+    const row = line.split(",").map(c => c.trim());
+    try {
+      const inp = {
+        platform: get(row, "platform", "etsy").toLowerCase(),
+        price: parseFloat(get(row, "price", "0")) || 0,
+        product_cost: parseFloat(get(row, "product_cost", "0")) || 0,
+        shipping_paid: parseFloat(get(row, "shipping_paid", "0")) || 0,
+        shipping_charged: parseFloat(get(row, "shipping_charged", "0")) || 0,
+        offsite_ads: flag(row, "offsite_ads"),
+        vat_percent: parseFloat(get(row, "vat_percent", "0")) || 0,
+        shopify_monthly_fee: parseFloat(get(row, "shopify_monthly_fee", "0")) || 0,
+        shopify_monthly_orders: parseFloat(get(row, "shopify_monthly_orders", "0")) || 0,
+        amazon_category: get(row, "amazon_category", "default"),
+        amazon_per_item_fee: flag(row, "amazon_per_item_fee"),
+        units: Math.max(1, parseInt(get(row, "units", "1")) || 1),
+      };
+      const r = calculate(inp); count++;
+      html += `<tr><td>${row[idx("name")] || "—"}</td><td>${inp.platform}</td><td>${money(r.revenue)}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
+    } catch (e) { html += `<tr><td colspan="7" class="neg">Помилка: ${e.message}</td></tr>`; }
+  }
+  $("batchOut").innerHTML = html + "</table><p class='muted'>Рядків розраховано: " + count + "</p>";
+}
+
+function renderCompare() {
+  const inp = readInputs();
+  const html = ["etsy", "shopify", "amazon"].map(p => {
+    const r = calculate({ ...inp, platform: p });
+    return `<tr><td>${p}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
+  }).join("");
+  $("compareOut").innerHTML = "<table><tr><th>Канал</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>" + html + "</table>";
+}
+
+function saveScenario() {
+  const inp = readInputs();
+  const r = calculate(inp);
+  const name = prompt("Назва сценарію:", `${inp.platform} @ $${inp.price}`);
+  if (!name) return;
+  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+  all.push({ name, ts: Date.now(), inp, result: { net: r.net, margin: r.margin, breakeven: r.breakeven } });
+  localStorage.setItem("ml_scenarios", JSON.stringify(all));
+}
+
+function loadScenario(i) {
+  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+  const s = all[i]; if (!s) return;
+  $("platform").value = s.inp.platform;
+  $("price").value = s.inp.price; $("cost").value = s.inp.product_cost;
+  $("shipPaid").value = s.inp.shipping_paid; $("shipCharged").value = s.inp.shipping_charged;
+  $("vat").value = s.inp.vat_percent; $("units").value = s.inp.units;
+  $("offsite").checked = !!s.inp.offsite_ads;
+  $("monthlyFee").value = s.inp.shopify_monthly_fee; $("monthlyOrders").value = s.inp.shopify_monthly_orders;
+  $("amazonCat").value = s.inp.amazon_category; $("perItemFee").checked = !!s.inp.amazon_per_item_fee;
+  showTab("calc"); render();
+}
+
+function renderScenarios() {
+  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+  if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>Поки порожньо. Збережіть сценарій у калькуляторі.</p>"; return; }
+  $("scenariosList").innerHTML = all.map((s, i) =>
+    `<div class="scenario" onclick="loadScenario(${i})"><span>${s.name} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><button class="secondary" onclick="event.stopPropagation();delScenario(${i})">✕</button></div>`).join("");
+}
+
+function delScenario(i) {
+  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+  all.splice(i, 1); localStorage.setItem("ml_scenarios", JSON.stringify(all)); renderScenarios();
+}
+
+// Patch showTab to also refresh comparison table
+const _showTab = showTab;
+showTab = name => { _showTab(name); if (name === "compare") renderCompare(); };
+
+render();
+</script>
+</body>
+</html>
