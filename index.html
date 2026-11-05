@@ -85,6 +85,7 @@
   <button id="tab-compare" onclick="showTab('compare')">Порівняння каналів</button>
   <button id="tab-ads" onclick="showTab('ads')">Ad Profit</button>
   <button id="tab-season" onclick="showTab('season')">Сезонність</button>
+  <button id="tab-history" onclick="showTab('history')">Історія тарифів</button>
   <button id="tab-scenarios" onclick="showTab('scenarios')">Сценарії</button>
 </div>
 
@@ -265,11 +266,20 @@ speaker,amazon,60,25,6,0,false,0</textarea>
   </div>
 </div>
 
+<!-- RATE HISTORY -->
+<div id="panel-history" class="hidden">
+  <div class="card">
+    <h2>Історія змін тарифів</h2>
+    <p class="muted">Датований журнал змін тарифів, які модельує калькулятор (джерело: core/rate_history.py, дати — ефективні, з публічних анонсів платформ). При зміні констант у core/fees.py додайте запис і запустіть python generate_js.py.</p>
+    <div id="historyOut"></div>
+  </div>
+</div>
+
 <script src="core/fees.generated.js"></script>
 <script>
 "use strict";
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
-const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS, SEASONALITY } = window.ML_FEES;
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS, SEASONALITY, RATE_HISTORY } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 // ------------------------------------------------------------------
@@ -319,6 +329,11 @@ const I18N = {
     "Ніша": "Niche", "Місяць": "Month",
     "Пік": "Peak", "Високий": "High", "Звичайний": "Normal", "Низький": "Low",
     "Пік-місяці": "Peak months", "Спад": "Low season", "Рівень": "Level",
+    "Історія тарифів": "Fee-rate history", "Історія змін тарифів": "Fee-rate change history",
+    "Датований журнал змін тарифів, які модельує калькулятор (джерело: core/rate_history.py, дати — ефективні, з публічних анонсів платформ). При зміні констант у core/fees.py додайте запис і запустіть python generate_js.py.":
+      "A dated log of the fee-rate changes the calculator models (source: core/rate_history.py, effective dates from public platform announcements). When changing constants in core/fees.py, add an entry here and run python generate_js.py.",
+    "Зміна": "Change",
+    "Без записів (змін не зафіксовано з моменту запуску калькулятора):": "Without entries (no changes recorded since the calculator launched):",
     // platform notes
     "eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.":
       "eBay: final value fee ~13.25% of (price + shipping) + $0.40 per order.",
@@ -645,7 +660,7 @@ function priceForTargetMargin(inp, targetPct) {
 }
 
 function showTab(name) {
-  for (const t of ["calc", "batch", "compare", "ads", "scenarios", "season"]) {
+  for (const t of ["calc", "batch", "compare", "ads", "scenarios", "season", "history"]) {
     $("panel-" + t).classList.toggle("hidden", t !== name);
     $("tab-" + t).classList.toggle("active", t === name);
   }
@@ -1474,9 +1489,26 @@ function initSeasonPanel() {
   renderSeason();
 }
 
+// ------------------------------------------------------------------
+// Історія змін тарифів: дані — RATE_HISTORY з fees.generated.js
+// (джерело: core/rate_history.py). Сортування — від найсвіжішої.
+// ------------------------------------------------------------------
+
+function renderRateHistory() {
+  const rows = [...RATE_HISTORY].sort((a, b) => b.date.localeCompare(a.date));
+  const noData = ["etsy", "shopify", "amazon", "ebay", "vinted", "depop", "poshmark"]
+    .filter(p => !RATE_HISTORY.some(r => r.platform === p));
+  $("historyOut").innerHTML =
+    "<table><tr><th>" + t("Дата") + "</th><th>" + t("Платформа") + "</th><th>" + t("Зміна") + "</th></tr>" +
+    rows.map(r => `<tr><td>${r.date}</td><td>${escapeHtml(r.platform)}</td>` +
+      `<td>${escapeHtml(_lang === "en" ? r.en : r.ua)}</td></tr>`).join("") +
+    "</table>" +
+    `<p class="muted" style="margin-top:8px">${t("Без записів (змін не зафіксовано з моменту запуску калькулятора):")} ${noData.join(", ") || "—"}</p>`;
+}
+
 // Patch showTab to also refresh comparison & ads panels
 const _showTab = showTab;
-showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); if (name === "season") renderSeason(); };
+showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); if (name === "season") renderSeason(); if (name === "history") renderRateHistory(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
 applyI18n();          // UA/EN: apply saved or detected language

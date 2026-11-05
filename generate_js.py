@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from core.fx import FALLBACK_RATES, SYMBOLS
+from core.rate_history import RATE_HISTORY
 from core.seasonality import SEASONALITY
 from core.fees import (
     AMAZON_PER_ITEM_FEE,
@@ -61,6 +62,7 @@ PAYLOAD = {
     "SHIP_PRESETS": {k: {"label": v["label"], "paid": v["paid"], "charged": v["charged"]}
                      for k, v in ETSY_SHIPPING_PRESETS.items()},
     "SEASONALITY": SEASONALITY,
+    "RATE_HISTORY": RATE_HISTORY,
 }
 
 HEADER = (

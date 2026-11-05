@@ -275,5 +275,37 @@ window.ML_FEES = {
         1.5
       ]
     }
-  }
+  },
+  "RATE_HISTORY": [
+    {
+      "date": "2018-07-02",
+      "platform": "etsy",
+      "ua": "Transaction fee: 3.5% \u2192 5%",
+      "en": "Transaction fee: 3.5% \u2192 5%"
+    },
+    {
+      "date": "2022-04-11",
+      "platform": "etsy",
+      "ua": "Transaction fee: 5% \u2192 6.5% (\u0431\u0430\u0437\u0430: \u0446\u0456\u043d\u0430 + \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u043f\u043e\u043a\u0443\u043f\u0446\u044f)",
+      "en": "Transaction fee: 5% \u2192 6.5% (base: item + customer-paid shipping)"
+    },
+    {
+      "date": "2023-02-15",
+      "platform": "ebay",
+      "ua": "Final value fee: 12.9% \u2192 13.25% \u0434\u043b\u044f \u0431\u0456\u043b\u044c\u0448\u043e\u0441\u0442\u0456 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0456\u0439 (\u0421\u0428\u0410)",
+      "en": "Final value fee: 12.9% \u2192 13.25% in most categories (US)"
+    },
+    {
+      "date": "2023-06-01",
+      "platform": "etsy",
+      "ua": "Regulatory operating fee: UK 0.25% \u2192 0.32%, \u0406\u0442\u0430\u043b\u0456\u044f 0.25% \u2192 0.32%, \u0424\u0440\u0430\u043d\u0446\u0456\u044f 0.40% \u2192 0.47%",
+      "en": "Regulatory operating fee: UK 0.25% \u2192 0.32%, Italy 0.25% \u2192 0.32%, France 0.40% \u2192 0.47%"
+    },
+    {
+      "date": "2024-07-15",
+      "platform": "depop",
+      "ua": "\u0421\u0428\u0410: \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e 10% \u043a\u043e\u043c\u0456\u0441\u0456\u044e \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u044f (USD-\u043f\u0440\u043e\u0434\u0430\u0436\u0456). \u041a\u0430\u043b\u044c\u043a\u0443\u043b\u044f\u0442\u043e\u0440 \u043f\u043e\u043a\u0438 \u0437\u0430\u0441\u0442\u043e\u0441\u043e\u0432\u0443\u0454 10% \u0434\u043e \u0432\u0441\u0456\u0445 \u0440\u0438\u043d\u043a\u0456\u0432 \u2014 \u0434\u043b\u044f \u0421\u0428\u0410 \u0431\u0435\u0440\u0456\u0442\u044c \u0446\u0435 \u0434\u043e \u0443\u0432\u0430\u0433\u0438",
+      "en": "US: 10% selling fee removed (USD sales). The calculator still applies 10% to all markets \u2014 factor this in for US sales"
+    }
+  ]
 };
