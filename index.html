@@ -38,6 +38,25 @@
   input[type=range] { padding:0; }
   .scenario { display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border); font-size:.85rem; cursor:pointer; }
   .scenario:hover { background:var(--bg); }
+  button.btn-sm { padding:4px 10px; font-size:.85rem; }
+  @media(max-width:600px){
+    body { padding:14px; }
+    h1 { font-size:1.25rem; }
+    .row, .row3, .metrics { grid-template-columns:1fr; }
+    /* Tap targets >= 44px (Apple HIG / Material) */
+    button, .tabs button { min-height:44px; }
+    input, select, textarea { min-height:44px; font-size:1rem; }  /* 16px+: no iOS zoom-on-focus */
+    input[type=checkbox] { width:24px !important; height:24px; min-height:0; }
+    input[type=range] { min-height:0; height:32px; }
+    .tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+    .tabs button { flex:0 0 auto; padding:6px 14px; }
+    .scenario { padding:12px 8px; min-height:48px; }
+    .scenario button.btn-sm { min-height:40px; min-width:48px; }
+    th, td { padding:8px 6px; }
+    table { font-size:.8rem; }
+    .metric .v { font-size:1.15rem; }
+    svg[role=img] { max-width:100% !important; }
+  }
 </style>
 </head>
 <body>
