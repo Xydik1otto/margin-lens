@@ -84,6 +84,9 @@
   <button id="tab-batch" onclick="showTab('batch')">Batch CSV</button>
   <button id="tab-compare" onclick="showTab('compare')">Порівняння каналів</button>
   <button id="tab-ads" onclick="showTab('ads')">Ad Profit</button>
+  <button id="tab-season" onclick="showTab('season')">Сезонність</button>
+  <button id="tab-quick" onclick="showTab('quick')">⚡ Quick-calc</button>
+  <button id="tab-history" onclick="showTab('history')">Історія тарифів</button>
   <button id="tab-scenarios" onclick="showTab('scenarios')">Сценарії</button>
 </div>
 
@@ -185,6 +188,9 @@
     <label style="margin-top:14px">What if: підняти ціну на <span id="raiseLbl">0</span>%</label>
     <input id="raiseSlider" type="range" min="0" max="50" step="1" value="0" oninput="render()">
     <div id="whatif" class="muted" style="margin-top:4px"></div>
+    <label style="margin-top:14px">Цільова маржа (%)</label>
+    <input id="targetMargin" type="number" step="1" min="0" value="30" oninput="render()">
+    <div id="targetOut" class="muted" style="margin-top:4px" aria-live="polite"></div>
     <button style="margin-top:12px" onclick="saveScenario()">💾 Зберегти сценарій</button>
     <button class="secondary" style="margin-top:12px" onclick="exportScenarioCsv()">⬇ CSV сценарію</button>
     <button class="secondary" style="margin-top:12px" onclick="exportCompareCsv()">⬇ CSV порівняння</button>
@@ -247,11 +253,49 @@ speaker,amazon,60,25,6,0,false,0</textarea>
   </div>
 </div>
 
+<!-- SEASONALITY -->
+<div id="panel-season" class="hidden">
+  <div class="card">
+    <h2>Сезонність продажів</h2>
+    <p class="muted">Орієнтовні індекси попиту по місяцях (×1.0 = звичайний місяць) для типових ніш хендмейд-маркетплейсів. Це оцінки для планування запасів/реклами, не гарантія попиту.</p>
+    <div class="row">
+      <div><label>Ніша</label><select id="seasonCat" onchange="renderSeason()" aria-label="Ніша для сезонності"></select></div>
+      <div><label>Місяць</label><select id="seasonMonth" onchange="renderSeason()" aria-label="Місяць для сезонності"></select></div>
+    </div>
+    <div id="seasonNote" style="margin-top:10px"></div>
+    <div id="seasonTable" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- RATE HISTORY -->
+<div id="panel-history" class="hidden">
+  <div class="card">
+    <h2>Історія змін тарифів</h2>
+    <p class="muted">Датований журнал змін тарифів, які модельує калькулятор (джерело: core/rate_history.py, дати — ефективні, з публічних анонсів платформ). При зміні констант у core/fees.py додайте запис і запустіть python generate_js.py.</p>
+    <div id="historyOut"></div>
+  </div>
+</div>
+
+<!-- QUICK CALC (мини-режим) -->
+<div id="panel-quick" class="hidden">
+  <div class="card">
+    <h2>Quick-calc: швидка оцінка</h2>
+    <p class="muted">Мінімум полів: платформа, ціна, собівартість — миттєвий net і маржа. Без доставки, VAT і повернень.</p>
+    <div class="row3">
+      <div><label>Платформа</label><select id="qPlatform" onchange="renderQuick()" aria-label="Платформа (quick-calc)"></select></div>
+      <div><label>Ціна</label><input id="qPrice" type="number" step="0.01" value="30.00" oninput="renderQuick()"></div>
+      <div><label>Собівартість</label><input id="qCost" type="number" step="0.01" value="8.00" oninput="renderQuick()"></div>
+    </div>
+    <div class="metrics" id="quickMetrics" style="margin-top:12px" aria-live="polite"></div>
+    <p class="muted" style="margin-top:8px" id="quickHint">Повний режим — у вкладці «Калькулятор»: доставка, VAT, повернення, цільова маржа, сценарії.</p>
+  </div>
+</div>
+
 <script src="core/fees.generated.js"></script>
 <script>
 "use strict";
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
-const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS } = window.ML_FEES;
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS, SEASONALITY, RATE_HISTORY } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 // ------------------------------------------------------------------
@@ -290,6 +334,28 @@ const I18N = {
     "VAT/PDV": "VAT", "What if: підняти ціну на": "What if: raise price by",
     "💾 Зберегти сценарій": "💾 Save scenario", "⬇ CSV сценарію": "⬇ Scenario CSV",
     "⬇ CSV порівняння": "⬇ Comparison CSV", "🔗 Поділитись лінком": "🔗 Share link",
+    "Цільова маржа (%)": "Target margin (%)",
+    "Факт": "Actual", "vs ціль": "vs target",
+    "вище цілі": "above target", "на цілі": "on target", "нижче цілі": "below target",
+    "Ціна для цілі": "Price to hit target", "Ціль недосяжна при цих зборах": "Target unreachable with these fees",
+    "Задайте цільову маржу, щоб порівняти.": "Set a target margin to compare.",
+    "Сезонність": "Seasonality", "Сезонність продажів": "Sales seasonality",
+    "Орієнтовні індекси попиту по місяцях (×1.0 = звичайний місяць) для типових ніш хендмейд-маркетплейсів. Це оцінки для планування запасів/реклами, не гарантія попиту.":
+      "Rough monthly demand indices (×1.0 = an average month) for typical handmade-marketplace niches. Estimates for stock/ads planning, not a demand guarantee.",
+    "Ніша": "Niche", "Місяць": "Month",
+    "Пік": "Peak", "Високий": "High", "Звичайний": "Normal", "Низький": "Low",
+    "Пік-місяці": "Peak months", "Спад": "Low season", "Рівень": "Level",
+    "Історія тарифів": "Fee-rate history", "Історія змін тарифів": "Fee-rate change history",
+    "Датований журнал змін тарифів, які модельує калькулятор (джерело: core/rate_history.py, дати — ефективні, з публічних анонсів платформ). При зміні констант у core/fees.py додайте запис і запустіть python generate_js.py.":
+      "A dated log of the fee-rate changes the calculator models (source: core/rate_history.py, effective dates from public platform announcements). When changing constants in core/fees.py, add an entry here and run python generate_js.py.",
+    "Зміна": "Change",
+    "Без записів (змін не зафіксовано з моменту запуску калькулятора):": "Without entries (no changes recorded since the calculator launched):",
+    "⚡ Quick-calc": "⚡ Quick-calc", "Quick-calc: швидка оцінка": "Quick-calc: quick estimate",
+    "Мінімум полів: платформа, ціна, собівартість — миттєвий net і маржа. Без доставки, VAT і повернень.":
+      "Minimal inputs: platform, price, cost of goods — instant net and margin. No shipping, VAT or returns.",
+    "Ціна": "Price",
+    "Повний режим — у вкладці «Калькулятор»: доставка, VAT, повернення, цільова маржа, сценарії.":
+      "Full mode is in the Calculator tab: shipping, VAT, returns, target margin, scenarios.",
     // platform notes
     "eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.":
       "eBay: final value fee ~13.25% of (price + shipping) + $0.40 per order.",
@@ -375,6 +441,7 @@ function setLang(lang) {
   try { localStorage.setItem(I18N_KEY, _lang); } catch (e) { /* storage unavailable */ }
   applyI18n();
   render(); renderAds(); renderScenarios(); renderBatchHistory(); renderDuplicates();
+  if (typeof renderSeason === "function") renderSeason();
   if (_lastBatchRows.length) runBatch();
 }
 
@@ -581,8 +648,41 @@ function calculate(inp) {
   };
 }
 
+// ---- Цільова маржа: JS-дзеркало core.target_margin (gap_to_target /
+// price_for_target_margin). Цільова ціна розв'язується аналітично:
+// (P + sc) * (1 - pct_total - target) = cost + shipPaid + fixed.
+function gapToTarget(marginPct, targetPct, eps = 0.05) {
+  const actual = +marginPct.toFixed(2);
+  if (targetPct === null || targetPct === undefined || targetPct <= 0)
+    return { actual, target: null, gap_pp: null, status: "none" };
+  const gap = +(actual - targetPct).toFixed(2);
+  const status = gap > eps ? "above" : gap >= -eps ? "on" : "below";
+  return { actual, target: targetPct, gap_pp: gap, status };
+}
+
+function priceForTargetMargin(inp, targetPct) {
+  const t = targetPct / 100;
+  if (t <= 0 || t >= 1) return null;
+  const vat = (inp.vat_percent || 0) / 100;
+  const sc = inp.shipping_charged || 0;
+  const baseCost = inp.product_cost + inp.shipping_paid;
+  if (inp.platform === "poshmark") {
+    const flat = fixedCur(POSHMARK.flatFee, inp.currency);
+    const d1 = 1 - vat - t;
+    const pFlat = d1 > 1e-9 ? (baseCost + flat - sc * d1) / d1 : Infinity;
+    if (pFlat < POSHMARK.tierBoundary) return Math.max(0, Math.round(pFlat * 100) / 100);
+    const d2 = 1 - vat - POSHMARK.pctOver - t;
+    if (d2 <= 1e-9) return null;
+    return Math.max(0, Math.round((baseCost - sc * d1) / d2 * 100) / 100);
+  }
+  const denom = 1 - pctTotal(inp) - t;
+  if (denom <= 1e-9) return null;
+  const need = baseCost + fixedFees(inp) + platformFixedExtra(inp);
+  return Math.max(0, Math.round(need / denom * 100) / 100 - sc);
+}
+
 function showTab(name) {
-  for (const t of ["calc", "batch", "compare", "ads", "scenarios"]) {
+  for (const t of ["calc", "batch", "compare", "ads", "scenarios", "season", "quick", "history"]) {
     $("panel-" + t).classList.toggle("hidden", t !== name);
     $("tab-" + t).classList.toggle("active", t === name);
   }
@@ -677,6 +777,20 @@ function render() {
     const raised = calculate({ ...inp, price: inp.price * (1 + deltaPct / 100) });
     $("whatif").textContent = `Net: ${money(raised.net)} (margin ${raised.margin.toFixed(1)}%) — +${money(raised.net - r.net)} до поточного`;
   } else $("whatif").textContent = "Пересуньте слайдер, щоб побачити вплив підвищення ціни";
+
+  // Цільова маржа: розрив у п.п. + ціна для досягнення цілі
+  const target = num("targetMargin");
+  if (target > 0) {
+    const g = gapToTarget(r.margin, target);
+    const statusText = { above: t("вище цілі"), on: t("на цілі"), below: t("нижче цілі") }[g.status];
+    const priceNeeded = priceForTargetMargin(inp, target);
+    $("targetOut").innerHTML =
+      `${t("Факт")} ${g.actual.toFixed(1)}% ${t("vs ціль")} ${g.target}%: ` +
+      `<span class="${g.gap_pp >= 0 ? "pos" : "neg"}">${g.gap_pp > 0 ? "+" : ""}${g.gap_pp.toFixed(2)} ${t("п.п.")} — ${statusText}</span>` +
+      (priceNeeded !== null
+        ? ` • ${t("Ціна для цілі")}: <b>${money(priceNeeded)}</b>`
+        : ` • ${t("Ціль недосяжна при цих зборах")}`);
+  } else $("targetOut").textContent = t("Задайте цільову маржу, щоб порівняти.");
 }
 
 function runBatch() {
@@ -1315,9 +1429,134 @@ function applyInputs(inp) {
   $("currency").value = FX.symbols[inp.currency] ? inp.currency : "USD";
 }
 
+// ------------------------------------------------------------------
+// Сезонність продажів: дані — SEASONALITY з fees.generated.js
+// (джерело: core/seasonality.py). Рівні: peak >= 1.3, high >= 1.1,
+// low <= 0.8, інакше normal.
+// ------------------------------------------------------------------
+
+const MONTHS_UA = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
+  "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"];
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+const SEASON_LEVEL_LABEL = { peak: ["Пік", "Peak"], high: ["Високий", "High"],
+  normal: ["Звичайний", "Normal"], low: ["Низький", "Low"] };
+const SEASON_NOTE_TPL = {
+  peak: ["{m} — піковий сезон (×{f}): найвищі продажі. Запаси, реклама й оновлені літинги — заздалегідь.",
+         "{m} is a peak month (×{f}): highest sales. Prepare stock, ads and refreshed listings early."],
+  high: ["{m} — попит вище середнього (×{f}).", "{m} — above-average demand (×{f})."],
+  normal: ["{m} — звичайний попит (×{f}).", "{m} — normal demand (×{f})."],
+  low: ["{m} — низький сезон (×{f}): час готувати запаси, контент і літинги до піку.",
+        "{m} is the low season (×{f}): time to prepare stock, content and listings for the peak."],
+};
+let _seasonLang = null;
+
+function buildSeasonOptions() {
+  const sel = $("seasonCat");
+  const keep = sel.value;
+  sel.innerHTML = "";
+  for (const [key, c] of Object.entries(SEASONALITY)) {
+    const o = document.createElement("option");
+    o.value = key;
+    o.textContent = _lang === "en" ? c.label_en : c.label;
+    sel.appendChild(o);
+  }
+  if (keep && SEASONALITY[keep]) sel.value = keep;
+  _seasonLang = _lang;
+}
+
+function seasonLevel(f) {
+  return f >= 1.3 ? "peak" : f >= 1.1 ? "high" : f <= 0.8 ? "low" : "normal";
+}
+
+function renderSeason() {
+  if (_seasonLang !== _lang) buildSeasonOptions();
+  const cat = SEASONALITY[$("seasonCat").value];
+  if (!cat) return;
+  const month = parseInt($("seasonMonth").value) || (new Date().getMonth() + 1);
+  const f = cat.factors[month - 1];
+  const lvl = seasonLevel(f);
+  const mName = (_lang === "en" ? MONTHS_EN : MONTHS_UA)[month - 1];
+  const note = SEASON_NOTE_TPL[lvl][_lang === "en" ? 1 : 0]
+    .replace("{m}", mName).replace("{f}", f.toFixed(2));
+  const lvlLabel = SEASON_LEVEL_LABEL[lvl][_lang === "en" ? 1 : 0];
+  const peakList = cat.factors.map((v, i) => v >= 1.3 ? i + 1 : 0).filter(m => m)
+    .map(m => (_lang === "en" ? MONTHS_EN : MONTHS_UA)[m - 1]);
+  const quietList = cat.factors.map((v, i) => v <= 0.8 ? i + 1 : 0).filter(m => m)
+    .map(m => (_lang === "en" ? MONTHS_EN : MONTHS_UA)[m - 1]);
+  $("seasonNote").innerHTML =
+    `<p style="margin-top:6px"><b>${note}</b></p>` +
+    `<p class="muted">${t("Пік-місяці")}: ${peakList.join(", ") || "—"} • ${t("Спад")}: ${quietList.join(", ") || "—"}</p>`;
+  $("seasonTable").innerHTML =
+    "<table><tr><th>" + t("Місяць") + "</th><th>×1.0</th><th>" + t("Рівень") + "</th></tr>" +
+    cat.factors.map((v, i) => {
+      const l = seasonLevel(v);
+      const cls = l === "peak" ? "pos" : l === "low" ? "muted" : "";
+      const hl = i + 1 === month ? ' style="background:var(--bg);font-weight:600"' : "";
+      return `<tr${hl}><td>${(_lang === "en" ? MONTHS_EN : MONTHS_UA)[i]}</td>` +
+        `<td class="${cls}">×${v.toFixed(2)}</td><td class="${cls}">${SEASON_LEVEL_LABEL[l][_lang === "en" ? 1 : 0]}</td></tr>`;
+    }).join("") + "</table>";
+}
+
+function initSeasonPanel() {
+  buildSeasonOptions();
+  const selM = $("seasonMonth");
+  const nowM = new Date().getMonth() + 1;
+  for (let m = 1; m <= 12; m++) {
+    const o = document.createElement("option");
+    o.value = String(m); o.textContent = MONTHS_UA[m - 1];
+    selM.appendChild(o);
+  }
+  selM.value = String(nowM);
+  renderSeason();
+}
+
+// ------------------------------------------------------------------
+// Історія змін тарифів: дані — RATE_HISTORY з fees.generated.js
+// (джерело: core/rate_history.py). Сортування — від найсвіжішої.
+// ------------------------------------------------------------------
+
+function renderRateHistory() {
+  const rows = [...RATE_HISTORY].sort((a, b) => b.date.localeCompare(a.date));
+  const noData = ["etsy", "shopify", "amazon", "ebay", "vinted", "depop", "poshmark"]
+    .filter(p => !RATE_HISTORY.some(r => r.platform === p));
+  $("historyOut").innerHTML =
+    "<table><tr><th>" + t("Дата") + "</th><th>" + t("Платформа") + "</th><th>" + t("Зміна") + "</th></tr>" +
+    rows.map(r => `<tr><td>${r.date}</td><td>${escapeHtml(r.platform)}</td>` +
+      `<td>${escapeHtml(_lang === "en" ? r.en : r.ua)}</td></tr>`).join("") +
+    "</table>" +
+    `<p class="muted" style="margin-top:8px">${t("Без записів (змін не зафіксовано з моменту запуску калькулятора):")} ${noData.join(", ") || "—"}</p>`;
+}
+
+// ------------------------------------------------------------------
+// Quick-calc (мини-режим): платформа + ціна + собівартість -> net/margin.
+// Логіка — той самий протестований calculate(); лише мінімум вводу.
+// ------------------------------------------------------------------
+
+function renderQuick() {
+  const inp = {
+    platform: $("qPlatform").value, price: num("qPrice"), product_cost: num("qCost"),
+    shipping_paid: 0, shipping_charged: 0, vat_percent: 0, return_rate_pct: 0,
+    currency: cur(), units: 1,
+  };
+  const r = calculate(inp);
+  const cls = v => v >= 0 ? "pos" : "neg";
+  $("quickMetrics").innerHTML = `
+    <div class="metric"><div class="v ${cls(r.net)}">${money(r.net)}</div><div class="k">${t("Net profit")}</div></div>
+    <div class="metric"><div class="v ${cls(r.margin)}">${r.margin.toFixed(1)}%</div><div class="k">${t("Margin")}</div></div>
+    <div class="metric"><div class="v">${r.breakeven === null ? "—" : money(r.breakeven)}</div><div class="k">${t("Breakeven ціна")}</div></div>`;
+}
+
+function initQuickPanel() {
+  const sel = $("qPlatform");
+  if (!sel.options.length)
+    for (const o of [...$("platform").options]) sel.add(new Option(o.textContent, o.value));
+  renderQuick();
+}
+
 // Patch showTab to also refresh comparison & ads panels
 const _showTab = showTab;
-showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); };
+showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); if (name === "season") renderSeason(); if (name === "history") renderRateHistory(); if (name === "quick") renderQuick(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
 applyI18n();          // UA/EN: apply saved or detected language
@@ -1327,6 +1566,8 @@ try {
 } catch (e) { /* storage unavailable */ }
 migrateToIdb();       // one-time migration: localStorage scenarios -> IndexedDB
 render();
+initSeasonPanel();    // вкладка «Сезонність»: опції нішей/місяців + поточний місяць
+initQuickPanel();     // вкладка «Quick-calc»: платформи з калькулятора + перший рендер
 refreshFxRates();     // async: live ECB rates (cache -> fetch -> fallback constants)
 </script>
 </body>
