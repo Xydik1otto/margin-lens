@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+### Added
+- **Порівняння з цільовою маржею %**: поле в картці результату — розрив
+  фактичної маржі від цілі (п.п., above/on/below) + аналітична ціна, за якої
+  ціль досягається (`core/target_margin.py`; Poshmark — по обох тарифних
+  рівнях, як breakeven).
+- **Сезонність продажів — нотатки**: вкладка з орієнтовними індексами попиту
+  по місяцях для 8 ніш (Q4-пік, січневий спад, Валентин/весільний сезон),
+  нотатка для обраного місяця (`core/seasonality.py`; дані — в
+  `fees.generated.js`).
+- **Історія змін тарифів з датами**: вкладка-журнал (`core/rate_history.py`) —
+  transaction fee Etsy 2018/2022, regulatory fee 2023-06-01, eBay 13.25%
+  2023-02-15, Depop US 2024-07-15; платформи без записів позначені окремо.
+- **Quick-calc міні-режим**: окрема вкладка — платформа/ціна/собівартість →
+  net + маржа + breakeven миттєво (той самий протестований `calculate()`).
+
+### Changed
+- `generate_js.py`: до payload додано `SEASONALITY` і `RATE_HISTORY`;
+  `fees.generated.js` перегенеровано. Правило без змін: будь-яка зміна
+  тарифів у `core/fees.py` → `python generate_js.py` (перевіряє тест і smoke).
+- Тести: 210 → 271 (+1 skipped).
+
 ### Removed
 - Монетизаційний scaffolding: `.github/FUNDING.yml` (Sponsors-кнопка), секцію
   «Монетизація» з PLAN.md (Freemium/Pro-тарифи, конверсія free→Pro), згадку
