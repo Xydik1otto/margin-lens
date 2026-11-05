@@ -34,5 +34,37 @@ window.ML_FEES = {
     "GB",
     "IT",
     "UK"
-  ]
+  ],
+  "SHIP_PRESETS": {
+    "us_domestic": {
+      "label": "\u0421\u0428\u0410 (\u0432\u043d\u0443\u0442\u0440\u0456\u0448\u043d\u044f)",
+      "paid": 4.0,
+      "charged": 5.0
+    },
+    "us_intl": {
+      "label": "\u0421\u0428\u0410 \u2192 \u043c\u0456\u0436\u043d\u0430\u0440\u043e\u0434\u043d\u0435",
+      "paid": 12.0,
+      "charged": 14.0
+    },
+    "uk_domestic": {
+      "label": "UK (\u0432\u043d\u0443\u0442\u0440\u0456\u0448\u043d\u044f)",
+      "paid": 3.5,
+      "charged": 4.5
+    },
+    "eu_domestic": {
+      "label": "EU (\u0432\u043d\u0443\u0442\u0440\u0456\u0448\u043d\u044f)",
+      "paid": 4.5,
+      "charged": 6.0
+    },
+    "ca_domestic": {
+      "label": "\u041a\u0430\u043d\u0430\u0434\u0430",
+      "paid": 5.0,
+      "charged": 6.5
+    },
+    "au_domestic": {
+      "label": "\u0410\u0432\u0441\u0442\u0440\u0430\u043b\u0456\u044f",
+      "paid": 5.5,
+      "charged": 7.0
+    }
+  }
 };

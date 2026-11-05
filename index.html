@@ -67,9 +67,18 @@
       <div><label>Собівартість ($)</label><input id="cost" type="number" step="0.01" value="8.00" oninput="render()"></div>
     </div>
     <div class="row">
-      <div><label>Доставка: ви платите ($)</label><input id="shipPaid" type="number" step="0.01" value="4.00" oninput="render()"></div>
-      <div><label>Доставка: покупець платить ($)</label><input id="shipCharged" type="number" step="0.01" value="5.00" oninput="render()"></div>
+      <div>
+        <label>Доставка: ви платите ($)</label><input id="shipPaid" type="number" step="0.01" value="4.00" oninput="render()">
+      </div>
+      <div>
+        <label>Доставка: покупець платить ($)</label><input id="shipCharged" type="number" step="0.01" value="5.00" oninput="render()">
+      </div>
     </div>
+    <label>Регіон доставки (пресет Etsy)</label>
+    <select id="shipRegion" onchange="applyShipPreset(this.value)">
+      <option value="">— вручну —</option>
+    </select>
+    <div id="shipMargin" class="muted" style="margin-top:4px"></div>
     <div class="row">
       <div><label>VAT/PDV (%)</label><input id="vat" type="number" step="0.1" value="0" oninput="render()"></div>
       <div><label>Кількість в замовленні</label><input id="units" type="number" step="1" min="1" value="1" oninput="render()"></div>
@@ -156,7 +165,7 @@ speaker,amazon,60,25,6,0,false,0</textarea>
 <script>
 "use strict";
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
-const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES } = window.ML_FEES;
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, SHIP_PRESETS } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 const $ = id => document.getElementById(id);
@@ -166,6 +175,19 @@ const money = v => (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
 // Populate Amazon category select
 for (const [k, lbl] of Object.entries(CAT_LABELS)) {
   const o = document.createElement("option"); o.value = k; o.textContent = lbl; $("amazonCat").appendChild(o);
+}
+// Populate shipping region presets (generated from fees.py)
+for (const [k, p] of Object.entries(SHIP_PRESETS)) {
+  const o = document.createElement("option"); o.value = k; o.textContent = `${p.label} ($${p.paid.toFixed(2)} / $${p.charged.toFixed(2)})`;
+  $("shipRegion").appendChild(o);
+}
+
+function applyShipPreset(key) {
+  const p = SHIP_PRESETS[key];
+  if (!p) return;
+  $("shipPaid").value = p.paid.toFixed(2);
+  $("shipCharged").value = p.charged.toFixed(2);
+  render();
 }
 
 function readInputs() {
@@ -261,6 +283,9 @@ function render() {
   const inp = readInputs();
   const r = calculate(inp);
   const cls = v => v >= 0 ? "pos" : "neg";
+  const sm = r.shipping_margin;
+  $("shipMargin").innerHTML = sm === 0 ? "" :
+    `Маржа доставки: <span class="${cls(sm)}">${money(sm)}</span> (покупець платить ${money(inp.shipping_charged)}, ви платите ${money(inp.shipping_paid)})`;
   $("metrics").innerHTML = `
     <div class="metric"><div class="v ${cls(r.net)}">${money(r.net)}</div><div class="k">Net profit</div></div>
     <div class="metric"><div class="v ${cls(r.margin)}">${r.margin.toFixed(1)}%</div><div class="k">Margin</div></div>

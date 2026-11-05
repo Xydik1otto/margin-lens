@@ -290,3 +290,34 @@ class TestGeneratedJsSync:
         payload = json.loads(text.split("window.ML_FEES = ", 1)[1].rstrip(";\n"))
         assert payload["ETSY"]["ads"] == ETSY["ads_pct"]
         assert payload["ETSY"]["regulatory"] == ETSY["regulatory_pct"]
+
+
+# ---------------------------------------------------------------------------
+# v0.2.0: shipping charged vs paid + regional presets
+# ---------------------------------------------------------------------------
+
+from core.fees import ETSY_SHIPPING_PRESETS, shipping_margin  # noqa: E402
+
+
+class TestShipping:
+    def test_shipping_margin_positive_and_negative(self):
+        assert shipping_margin(m()) == pytest.approx(1.00)      # 5 - 4
+        assert shipping_margin(m(shipping_paid=6.0)) == pytest.approx(-1.00)
+
+    def test_shipping_margin_in_result(self):
+        r = calculate(m())
+        assert r.shipping_margin == pytest.approx(1.00)
+
+    def test_presets_structure(self):
+        for key, p in ETSY_SHIPPING_PRESETS.items():
+            assert set(p) == {"label", "paid", "charged"}, key
+            assert p["paid"] > 0 and p["charged"] > 0
+
+    def test_presets_us_domestic_values(self):
+        assert ETSY_SHIPPING_PRESETS["us_domestic"]["paid"] == pytest.approx(4.00)
+        assert ETSY_SHIPPING_PRESETS["us_domestic"]["charged"] == pytest.approx(5.00)
+
+    def test_generated_js_contains_presets(self):
+        import generate_js
+        assert generate_js.PAYLOAD["SHIP_PRESETS"]["uk_domestic"] == {
+            "label": "UK (внутрішня)", "paid": 3.50, "charged": 4.50}

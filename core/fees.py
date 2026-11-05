@@ -27,6 +27,17 @@ ETSY = {
 # Countries where Etsy charges the 0.32% regulatory operating fee.
 REGULATORY_COUNTRIES = {"GB", "UK", "FR", "IT", "ES"}
 
+# Typical Etsy shipping rates by region (small parcel, USD), 2025.
+# Used as one-click presets: what the seller pays vs what the customer pays.
+ETSY_SHIPPING_PRESETS = {
+    "us_domestic":  {"label": "США (внутрішня)",  "paid": 4.00, "charged": 5.00},
+    "us_intl":      {"label": "США → міжнародне", "paid": 12.00, "charged": 14.00},
+    "uk_domestic":  {"label": "UK (внутрішня)",   "paid": 3.50, "charged": 4.50},
+    "eu_domestic":  {"label": "EU (внутрішня)",   "paid": 4.50, "charged": 6.00},
+    "ca_domestic":  {"label": "Канада",           "paid": 5.00, "charged": 6.50},
+    "au_domestic":  {"label": "Австралія",        "paid": 5.50, "charged": 7.00},
+}
+
 SHOPIFY = {
     "payment_pct": 0.029,         # online card rate (Basic plan)
     "payment_fixed": 0.30,
@@ -92,6 +103,12 @@ class FeeResult:
     net_profit: float
     margin_pct: float              # net / revenue * 100
     breakeven_price: float | None  # item price that yields net == 0
+    shipping_margin: float = 0.0   # shipping_charged - shipping_paid (customer-side delta)
+
+
+def shipping_margin(inp: FeeInputs) -> float:
+    """Shipping profit/loss: what the customer pays vs what the seller pays."""
+    return round(inp.shipping_charged - inp.shipping_paid, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +238,7 @@ def calculate(inp: FeeInputs) -> FeeResult:
         net_profit=round(net, 2),
         margin_pct=round(margin, 2),
         breakeven_price=breakeven_price(inp),
+        shipping_margin=shipping_margin(inp),
     )
 
 
