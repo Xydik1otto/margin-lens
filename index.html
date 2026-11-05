@@ -84,6 +84,7 @@
   <button id="tab-batch" onclick="showTab('batch')">Batch CSV</button>
   <button id="tab-compare" onclick="showTab('compare')">Порівняння каналів</button>
   <button id="tab-ads" onclick="showTab('ads')">Ad Profit</button>
+  <button id="tab-season" onclick="showTab('season')">Сезонність</button>
   <button id="tab-scenarios" onclick="showTab('scenarios')">Сценарії</button>
 </div>
 
@@ -250,11 +251,25 @@ speaker,amazon,60,25,6,0,false,0</textarea>
   </div>
 </div>
 
+<!-- SEASONALITY -->
+<div id="panel-season" class="hidden">
+  <div class="card">
+    <h2>Сезонність продажів</h2>
+    <p class="muted">Орієнтовні індекси попиту по місяцях (×1.0 = звичайний місяць) для типових ніш хендмейд-маркетплейсів. Це оцінки для планування запасів/реклами, не гарантія попиту.</p>
+    <div class="row">
+      <div><label>Ніша</label><select id="seasonCat" onchange="renderSeason()" aria-label="Ніша для сезонності"></select></div>
+      <div><label>Місяць</label><select id="seasonMonth" onchange="renderSeason()" aria-label="Місяць для сезонності"></select></div>
+    </div>
+    <div id="seasonNote" style="margin-top:10px"></div>
+    <div id="seasonTable" style="margin-top:10px"></div>
+  </div>
+</div>
+
 <script src="core/fees.generated.js"></script>
 <script>
 "use strict";
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
-const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS } = window.ML_FEES;
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS, SEASONALITY } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 // ------------------------------------------------------------------
@@ -298,6 +313,12 @@ const I18N = {
     "вище цілі": "above target", "на цілі": "on target", "нижче цілі": "below target",
     "Ціна для цілі": "Price to hit target", "Ціль недосяжна при цих зборах": "Target unreachable with these fees",
     "Задайте цільову маржу, щоб порівняти.": "Set a target margin to compare.",
+    "Сезонність": "Seasonality", "Сезонність продажів": "Sales seasonality",
+    "Орієнтовні індекси попиту по місяцях (×1.0 = звичайний місяць) для типових ніш хендмейд-маркетплейсів. Це оцінки для планування запасів/реклами, не гарантія попиту.":
+      "Rough monthly demand indices (×1.0 = an average month) for typical handmade-marketplace niches. Estimates for stock/ads planning, not a demand guarantee.",
+    "Ніша": "Niche", "Місяць": "Month",
+    "Пік": "Peak", "Високий": "High", "Звичайний": "Normal", "Низький": "Low",
+    "Пік-місяці": "Peak months", "Спад": "Low season", "Рівень": "Level",
     // platform notes
     "eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.":
       "eBay: final value fee ~13.25% of (price + shipping) + $0.40 per order.",
@@ -383,6 +404,7 @@ function setLang(lang) {
   try { localStorage.setItem(I18N_KEY, _lang); } catch (e) { /* storage unavailable */ }
   applyI18n();
   render(); renderAds(); renderScenarios(); renderBatchHistory(); renderDuplicates();
+  if (typeof renderSeason === "function") renderSeason();
   if (_lastBatchRows.length) runBatch();
 }
 
@@ -623,7 +645,7 @@ function priceForTargetMargin(inp, targetPct) {
 }
 
 function showTab(name) {
-  for (const t of ["calc", "batch", "compare", "ads", "scenarios"]) {
+  for (const t of ["calc", "batch", "compare", "ads", "scenarios", "season"]) {
     $("panel-" + t).classList.toggle("hidden", t !== name);
     $("tab-" + t).classList.toggle("active", t === name);
   }
@@ -1370,9 +1392,91 @@ function applyInputs(inp) {
   $("currency").value = FX.symbols[inp.currency] ? inp.currency : "USD";
 }
 
+// ------------------------------------------------------------------
+// Сезонність продажів: дані — SEASONALITY з fees.generated.js
+// (джерело: core/seasonality.py). Рівні: peak >= 1.3, high >= 1.1,
+// low <= 0.8, інакше normal.
+// ------------------------------------------------------------------
+
+const MONTHS_UA = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
+  "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"];
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+const SEASON_LEVEL_LABEL = { peak: ["Пік", "Peak"], high: ["Високий", "High"],
+  normal: ["Звичайний", "Normal"], low: ["Низький", "Low"] };
+const SEASON_NOTE_TPL = {
+  peak: ["{m} — піковий сезон (×{f}): найвищі продажі. Запаси, реклама й оновлені літинги — заздалегідь.",
+         "{m} is a peak month (×{f}): highest sales. Prepare stock, ads and refreshed listings early."],
+  high: ["{m} — попит вище середнього (×{f}).", "{m} — above-average demand (×{f})."],
+  normal: ["{m} — звичайний попит (×{f}).", "{m} — normal demand (×{f})."],
+  low: ["{m} — низький сезон (×{f}): час готувати запаси, контент і літинги до піку.",
+        "{m} is the low season (×{f}): time to prepare stock, content and listings for the peak."],
+};
+let _seasonLang = null;
+
+function buildSeasonOptions() {
+  const sel = $("seasonCat");
+  const keep = sel.value;
+  sel.innerHTML = "";
+  for (const [key, c] of Object.entries(SEASONALITY)) {
+    const o = document.createElement("option");
+    o.value = key;
+    o.textContent = _lang === "en" ? c.label_en : c.label;
+    sel.appendChild(o);
+  }
+  if (keep && SEASONALITY[keep]) sel.value = keep;
+  _seasonLang = _lang;
+}
+
+function seasonLevel(f) {
+  return f >= 1.3 ? "peak" : f >= 1.1 ? "high" : f <= 0.8 ? "low" : "normal";
+}
+
+function renderSeason() {
+  if (_seasonLang !== _lang) buildSeasonOptions();
+  const cat = SEASONALITY[$("seasonCat").value];
+  if (!cat) return;
+  const month = parseInt($("seasonMonth").value) || (new Date().getMonth() + 1);
+  const f = cat.factors[month - 1];
+  const lvl = seasonLevel(f);
+  const mName = (_lang === "en" ? MONTHS_EN : MONTHS_UA)[month - 1];
+  const note = SEASON_NOTE_TPL[lvl][_lang === "en" ? 1 : 0]
+    .replace("{m}", mName).replace("{f}", f.toFixed(2));
+  const lvlLabel = SEASON_LEVEL_LABEL[lvl][_lang === "en" ? 1 : 0];
+  const peakList = cat.factors.map((v, i) => [v >= 1.3 ? i + 1 : 0])
+    .filter(m => m).map(m => (_lang === "en" ? MONTHS_EN : MONTHS_UA)[m - 1]);
+  const quietList = cat.factors.map((v, i) => [v <= 0.8 ? i + 1 : 0])
+    .filter(m => m).map(m => (_lang === "en" ? MONTHS_EN : MONTHS_UA)[m - 1]);
+  $("seasonNote").innerHTML =
+    `<p style="margin-top:6px"><b>${note}</b></p>` +
+    `<p class="muted">${t("Пік-місяці")}: ${peakList.join(", ") || "—"} • ${t("Спад")}: ${quietList.join(", ") || "—"}</p>`;
+  $("seasonTable").innerHTML =
+    "<table><tr><th>" + t("Місяць") + "</th><th>×1.0</th><th>" + t("Рівень") + "</th></tr>" +
+    cat.factors.map((v, i) => {
+      const l = seasonLevel(v);
+      const cls = l === "peak" ? "pos" : l === "low" ? "muted" : "";
+      const hl = i + 1 === month ? ' style="background:var(--bg);font-weight:600"' : "";
+      return `<tr${hl}><td>${(_lang === "en" ? MONTHS_EN : MONTHS_UA)[i]}</td>` +
+        `<td class="${cls}">×${v.toFixed(2)}</td><td class="${cls}">${SEASON_LEVEL_LABEL[l][_lang === "en" ? 1 : 0]}</td></tr>`;
+    }).join("") + "</table>";
+}
+
+function initSeasonPanel() {
+  buildSeasonOptions();
+  const selM = $("seasonMonth");
+  const nowM = new Date().getMonth() + 1;
+  for (let m = 1; m <= 12; m++) {
+    const o = document.createElement("option");
+    o.value = String(m); o.textContent = MONTHS_UA[m - 1];
+    selM.appendChild(o);
+  }
+  selM.value = String(nowM);
+  renderSeason();
+}
+
 // Patch showTab to also refresh comparison & ads panels
 const _showTab = showTab;
-showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); };
+showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); if (name === "season") renderSeason(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
 applyI18n();          // UA/EN: apply saved or detected language
@@ -1382,6 +1486,7 @@ try {
 } catch (e) { /* storage unavailable */ }
 migrateToIdb();       // one-time migration: localStorage scenarios -> IndexedDB
 render();
+initSeasonPanel();    // вкладка «Сезонність»: опції нішей/місяців + поточний місяць
 refreshFxRates();     // async: live ECB rates (cache -> fetch -> fallback constants)
 </script>
 </body>
