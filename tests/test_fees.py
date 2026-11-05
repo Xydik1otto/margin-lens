@@ -321,3 +321,46 @@ class TestShipping:
         import generate_js
         assert generate_js.PAYLOAD["SHIP_PRESETS"]["uk_domestic"] == {
             "label": "UK (внутрішня)", "paid": 3.50, "charged": 4.50}
+
+
+# ---------------------------------------------------------------------------
+# v0.2.x: returns/refunds simulation
+# ---------------------------------------------------------------------------
+
+class TestReturns:
+    def test_zero_returns_unchanged(self):
+        r = calculate(m(return_rate_pct=0))
+        assert r.net_profit_adjusted == pytest.approx(r.net_profit)
+        assert r.margin_pct_adjusted == pytest.approx(r.margin_pct)
+
+    def test_returns_math_50pct(self):
+        # net_full = 19.225; returned order loses 8 + 4 + 0.20 = 12.20
+        # net_adj = 0.5*19.225 + 0.5*(-12.20) = 3.5125
+        r = calculate(m(return_rate_pct=50))
+        assert r.net_profit_adjusted == pytest.approx(3.5125, abs=0.01)
+        assert r.margin_pct_adjusted == pytest.approx(3.5125 / 35 * 100, abs=0.01)
+
+    def test_100pct_returns_is_total_loss_of_cogs(self):
+        r = calculate(m(return_rate_pct=100))
+        assert r.net_profit_adjusted == pytest.approx(-(8 + 4 + 0.20), abs=0.01)
+
+    def test_return_rate_clamped(self):
+        r = calculate(m(return_rate_pct=150))
+        assert r.net_profit_adjusted == pytest.approx(-(8 + 4 + 0.20), abs=0.01)
+
+    def test_non_etsy_no_listing_loss(self):
+        # Shopify: returned order loses only COGS + shipping (8 + 4 = 12)
+        r = calculate(m(platform="shopify", return_rate_pct=100))
+        assert r.net_profit_adjusted == pytest.approx(-12.0, abs=0.01)
+
+    def test_returns_worse_than_base(self):
+        base = calculate(m())
+        adj = calculate(m(return_rate_pct=25))
+        assert adj.net_profit_adjusted < base.net_profit
+
+    def test_csv_return_rate_column(self):
+        rows = parse_csv(
+            "platform,price,product_cost,shipping_paid,shipping_charged,return_rate_pct\n"
+            "etsy,30,8,4,5,50\n"
+        )
+        assert calculate(rows[0]).net_profit_adjusted == pytest.approx(3.5125, abs=0.01)

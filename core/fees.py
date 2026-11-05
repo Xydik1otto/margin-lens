@@ -74,6 +74,7 @@ class FeeInputs:
     amazon_per_item_fee: bool = False  # individual selling plan $0.99
     etsy_ads: bool = False        # Etsy Ads fee (12.5%) on ads-attributed sales
     country: str = ""             # seller country code (ISO), for regulatory fee
+    return_rate_pct: float = 0.0  # expected % of orders returned/refunded
     # aggregated over one order; keep 1 for a single-unit sale
     units: int = 1
 
@@ -88,6 +89,7 @@ class FeeInputs:
             shipping_charged=max(0.0, self.shipping_charged),
             vat_percent=max(0.0, self.vat_percent),
             country=self.country.strip().upper(),
+            return_rate_pct=min(max(0.0, self.return_rate_pct), 100.0),
             units=max(1, int(self.units or 1)),
         )
 
@@ -104,6 +106,8 @@ class FeeResult:
     margin_pct: float              # net / revenue * 100
     breakeven_price: float | None  # item price that yields net == 0
     shipping_margin: float = 0.0   # shipping_charged - shipping_paid (customer-side delta)
+    net_profit_adjusted: float = 0.0    # net after the expected return rate
+    margin_pct_adjusted: float = 0.0    # margin after the expected return rate
 
 
 def shipping_margin(inp: FeeInputs) -> float:
@@ -228,6 +232,17 @@ def calculate(inp: FeeInputs) -> FeeResult:
     net = revenue - total_fees - vat - inp.product_cost - inp.shipping_paid
     margin = (net / revenue * 100.0) if revenue > 0 else 0.0
 
+    # Returns/refunds simulation: a returned sale refunds the customer in full,
+    # platform percent fees are refunded, but the seller loses COGS, outgoing
+    # shipping and (on Etsy) the non-refundable listing fee.
+    net_adj, margin_adj = net, margin
+    if inp.return_rate_pct > 0:
+        rate = inp.return_rate_pct / 100.0
+        listing_lost = ETSY["listing_fee"] * inp.units if inp.platform == "etsy" else 0.0
+        net_returned = -(inp.product_cost + inp.shipping_paid + listing_lost)
+        net_adj = (1.0 - rate) * net + rate * net_returned
+        margin_adj = (net_adj / revenue * 100.0) if revenue > 0 else 0.0
+
     return FeeResult(
         revenue=round(revenue, 2),
         fees={k: round(v, 2) for k, v in fees.items()},
@@ -239,6 +254,8 @@ def calculate(inp: FeeInputs) -> FeeResult:
         margin_pct=round(margin, 2),
         breakeven_price=breakeven_price(inp),
         shipping_margin=shipping_margin(inp),
+        net_profit_adjusted=round(net_adj, 2),
+        margin_pct_adjusted=round(margin_adj, 2),
     )
 
 
@@ -287,6 +304,7 @@ def parse_csv(text: str) -> list[FeeInputs]:
             etsy_ads=flag(row, "etsy_ads"),
             country=col(row, "country", ""),
             vat_percent=float(col(row, "vat_percent", "0")),
+            return_rate_pct=float(col(row, "return_rate_pct", "0")),
             shopify_monthly_fee=float(col(row, "shopify_monthly_fee", "0")),
             shopify_monthly_orders=float(col(row, "shopify_monthly_orders", "0")),
             amazon_category=col(row, "amazon_category", "default"),

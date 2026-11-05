@@ -79,8 +79,9 @@
       <option value="">— вручну —</option>
     </select>
     <div id="shipMargin" class="muted" style="margin-top:4px"></div>
-    <div class="row">
+    <div class="row3">
       <div><label>VAT/PDV (%)</label><input id="vat" type="number" step="0.1" value="0" oninput="render()"></div>
+      <div><label>Повернення (%)</label><input id="returnRate" type="number" step="0.5" min="0" max="100" value="0" oninput="render()"></div>
       <div><label>Кількість в замовленні</label><input id="units" type="number" step="1" min="1" value="1" oninput="render()"></div>
     </div>
     <div id="etsyOpts">
@@ -133,7 +134,7 @@
 <div id="panel-batch" class="hidden">
   <div class="card">
     <h2>Batch-режим: вставте CSV</h2>
-    <p class="muted">Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, etsy_ads, country, vat_percent, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]</p>
+    <p class="muted">Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, etsy_ads, country, vat_percent, return_rate_pct, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]</p>
     <textarea id="csv" rows="6" spellcheck="false">name,platform,price,product_cost,shipping_paid,shipping_charged,offsite_ads,vat_percent
 mug,etsy,30,8,4,5,true,0
 tshirt,shopify,25,10,3,0,false,0
@@ -199,6 +200,7 @@ function readInputs() {
     etsy_ads: $("etsyAds").checked,
     country: $("country").value,
     vat_percent: num("vat"),
+    return_rate_pct: num("returnRate"),
     shopify_monthly_fee: num("monthlyFee"), shopify_monthly_orders: num("monthlyOrders"),
     amazon_category: $("amazonCat").value,
     amazon_per_item_fee: $("perItemFee").checked,
@@ -260,9 +262,21 @@ function calculate(inp) {
   const totalFees = Object.values(fees).reduce((a, b) => a + b, 0);
   const vat = revenue * inp.vat_percent / 100;
   const net = revenue - totalFees - vat - inp.product_cost - inp.shipping_paid;
+  let netAdj = net, marginAdj = revenue > 0 ? net / revenue * 100 : 0;
+  const rr = Math.min(Math.max(inp.return_rate_pct || 0, 0), 100);
+  if (rr > 0) {
+    // Returned sale: full refund to customer, percent fees refunded,
+    // seller loses COGS + outgoing shipping + non-refundable listing fee (Etsy).
+    const listingLost = inp.platform === "etsy" ? ETSY.listing * inp.units : 0;
+    const netReturned = -(inp.product_cost + inp.shipping_paid + listingLost);
+    netAdj = (1 - rr / 100) * net + (rr / 100) * netReturned;
+    marginAdj = revenue > 0 ? netAdj / revenue * 100 : 0;
+  }
   return {
     revenue, fees, totalFees, vat, net,
     margin: revenue > 0 ? net / revenue * 100 : 0,
+    netAdj, marginAdj,
+    returnRate: rr,
     breakeven: breakeven(inp),
   };
 }
@@ -294,7 +308,10 @@ function render() {
   $("feesBreakdown").innerHTML = "<table><tr><th>Компонент</th><th>Сума</th></tr>" +
     Object.entries(r.fees).map(([k, v]) => `<tr><td>${k}</td><td>${money(v)}</td></tr>`).join("") +
     (r.vat > 0 ? `<tr><td>VAT/PDV</td><td>${money(r.vat)}</td></tr>` : "") +
-    `<tr><td><b>Всього зборів</b></td><td><b>${money(r.totalFees)}</b></td></tr></table>`;
+    `<tr><td><b>Всього зборів</b></td><td><b>${money(r.totalFees)}</b></td></tr></table>` +
+  (r.returnRate > 0
+    ? `<p style="margin-top:8px">З поверненнями ${r.returnRate}%: net <span class="${cls(r.netAdj)}">${money(r.netAdj)}</span>, margin ${r.marginAdj.toFixed(1)}% (без повернень: ${money(r.net)} / ${r.margin.toFixed(1)}%)</p>`
+    : "");
 
   const deltaPct = num("raiseSlider");
   $("raiseLbl").textContent = deltaPct;
@@ -462,6 +479,7 @@ function applyInputs(inp) {
   $("price").value = inp.price ?? 0; $("cost").value = inp.product_cost ?? 0;
   $("shipPaid").value = inp.shipping_paid ?? 0; $("shipCharged").value = inp.shipping_charged ?? 0;
   $("vat").value = inp.vat_percent ?? 0; $("units").value = inp.units ?? 1;
+  $("returnRate").value = inp.return_rate_pct ?? 0;
   $("offsite").checked = !!inp.offsite_ads;
   $("etsyAds").checked = !!inp.etsy_ads;
   $("country").value = inp.country || "";
