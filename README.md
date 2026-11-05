@@ -1,21 +1,34 @@
-# Margin Lens — калькулятор зборів та маржі для Etsy/Shopify/Amazon
+# Margin Lens — калькулятор зборів та маржі для Etsy/Shopify/Amazon/eBay/Vinted
 
-![tests](https://img.shields.io/badge/tests-34%20passing-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) ![version](https://img.shields.io/badge/version-0.3.0--alpha-orange)
+![tests](https://img.shields.io/badge/tests-103%20passing-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) ![version](https://img.shields.io/badge/version-0.4.0-orange)
 
 **Live demo:** _плейсхолдер — після пушу: `https://bigpi.github.io/margin-lens/`_ (GitHub Pages → Settings → Pages → Source: GitHub Actions)
 
 **Скріншот:** _плейсхолдер — `docs/screenshot.png` (додати пізніше)_
 
-## Проблема
+## Чому це існує
 
-Продавці на маркетплейсах не бачать свою **реальну** маржу. Дослідження перед MVP:
+> «Типовий продавець отримує **$18–20 з товару за $30** після всіх зборів — і **не знає**, скільки саме «з'їдає» кожен канал.»
 
-- **76 pay-сигналів** у e-commerce — збори стягуються звідусіль: listing fee, transaction fee, payment processing, offsite ads, Etsy Ads, підписка, referral по категоріях. **Fee stacking** (накопичення зборів) — головний біль продавців.
-- LinkedIn-аналіз: типовий продавець отримує **$18–20 з товару за $30** після всіх зборів і **не знає**, скільки саме «з'їдає» кожен канал. Без розрахунку неможливо зрозуміти, який канал вигідніший і де точка беззбитковості.
+Перед MVP ми дослідили біль продавців маркетплейсів:
+
+- **76 pay-сигналів** у e-commerce — збори стягуються звідусіль: listing fee, transaction fee, payment processing, offsite ads, Etsy Ads, підписка, referral по категоріях. **Fee stacking** (накопичення зборів) — головний біль продавців: жодна платформа не показує сумарну картинку.
+- **Немає точки беззбитковості**: без розрахунку неможливо зрозуміти, який канал вигідніший і за якої ціни продаж перестає приносити гроші.
+
+Margin Lens існує, щоб дати продавцю одне чесне число: **реальний net profit після всіх зборів** — і порівняти канали side-by-side до того, як товар виставлено.
 
 ## Що це
 
-SPA **без бекенда**: vanilla JS + localStorage, один `index.html` — розгорнуто на GitHub Pages за $0.
+SPA **без бекенда**: vanilla JS + IndexedDB/localStorage, один `index.html` — розгорнуто на GitHub Pages за $0.
+
+### v0.4.0 — мультивалюта та нові платформи
+
+- **Мультивалюта EUR/USD/GBP/UAH** — курси ECB (fetch + кеш 24 год, офлайн-фолбек константами); фіксовані збори конвертуються у вашу валюту
+- **eBay** — final value fee ~13.25% + $0.40/замовлення
+- **Vinted** — 0% комісії продавця (buyer protection оплачує покупець)
+- **Named presets сценаріїв** — перейменування/видалення в IndexedDB
+- **SVG bar chart** net profit у порівнянні каналів
+- **Mobile polish** — тап-зони 44px, одна колонка, без iOS zoom
 
 ### Alpha-функції (v0.1.0-alpha)
 
@@ -51,6 +64,9 @@ start index.html          # Windows (або відкрити в браузері
 python -m pip install pytest
 python -m pytest tests/ -v
 
+# Smoke-тест (HTML + тести + синхронізація generated JS)
+bash scripts/smoke.sh
+
 # Після зміни тарифів у core/fees.py — регенерувати JS-константи
 python generate_js.py
 ```
@@ -61,10 +77,14 @@ python generate_js.py
 margin-lens/
 ├── index.html              # SPA (калькулятор + batch + порівняння + сценарії)
 ├── core/fees.py            # чисті функції розрахунку зборів (джерело правди)
+├── core/fx.py              # мультивалюта: курси ECB, кеш, офлайн-фолбек
 ├── core/fees.generated.js  # АВТО-ГЕНЕРОВАНО з fees.py (generate_js.py)
-├── generate_js.py          # генератор JS-констант
+├── generate_js.py          # генератор JS-констант (--check для верифікації)
+├── scripts/smoke.sh        # smoke: HTML parse + pytest + sync check
+├── CHANGELOG.md            # Keep a Changelog
 ├── .github/workflows/deploy.yml  # автодеплой на GitHub Pages (push → main)
-└── tests/test_fees.py
+├── .github/FUNDING.yml
+└── tests/                  # test_fees.py, test_fx.py, test_currency.py, test_ebay_vinted.py
 ```
 
 ## Deploy
@@ -73,4 +93,4 @@ Push у `main` → workflow `deploy.yml` автоматично публікує
 
 ## Дисклеймер
 
-Тарифи зафіксовані станом на 2025 рік і змінюються платформами. Дані про збори — у відкритих тарифних сторінках Etsy/Shopify/Amazon; оновлюйте константи в `core/fees.py` і запускайте `python generate_js.py`.
+Тарифи зафіксовані станом на 2025 рік і змінюються платформами. Дані про збори — у відкритих тарифних сторінках Etsy/Shopify/Amazon/eBay/Vinted; оновлюйте константи в `core/fees.py` і запускайте `python generate_js.py`. Курси валют — довідкові (ECB); фолбек-константи — наближені.

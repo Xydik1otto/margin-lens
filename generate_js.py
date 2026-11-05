@@ -14,6 +14,7 @@ constants (tests/test_generated_sync.py).
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from core.fx import FALLBACK_RATES, SYMBOLS
@@ -65,6 +66,13 @@ def build_js() -> str:
 
 
 def main() -> None:
+    if "--check" in sys.argv[1:]:
+        current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+        if current != build_js():
+            print(f"STALE: {OUT} does not match core/fees.py — run: python generate_js.py")
+            sys.exit(1)
+        print(f"OK: {OUT} is in sync with core/fees.py")
+        return
     OUT.write_text(build_js(), encoding="utf-8")
     print(f"wrote {OUT}")
 

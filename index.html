@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Margin Lens — калькулятор зборів та маржі</title>
+<meta name="description" content="Калькулятор реальних зборів та маржі для Etsy, Shopify, Amazon, eBay і Vinted: fee stacking, breakeven-ціна, мультивалюта EUR/USD/GBP/UAH — все офлайн, без бекенду.">
+<meta property="og:title" content="Margin Lens — калькулятор зборів та маржі маркетплейсів">
+<meta property="og:description" content="Побачте, скільки «з'їдає» кожен канал: Etsy, Shopify, Amazon, eBay, Vinted. Fee stacking наочно, breakeven-ціна, мультивалюта, Ad Profit ROAS. Офлайн SPA без бекенду.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://bigpi.github.io/margin-lens/">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E%F0%9F%93%88%3C/text%3E%3C/svg%3E">
 <style>
   :root { --bg:#0f1115; --card:#1a1d24; --fg:#e6e9ef; --muted:#8b93a3; --accent:#4f8cff; --good:#3ecf8e; --bad:#ff6b6b; --border:#2a2f3a; }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -61,7 +68,7 @@
 </head>
 <body>
 <h1>Margin Lens</h1>
-<p class="sub">Калькулятор зборів та реальної маржі для Etsy / Shopify / Amazon. Дані зберігаються локально (localStorage) — ніякого бекенду.</p>
+<p class="sub">Калькулятор зборів та реальної маржі для Etsy / Shopify / Amazon / eBay / Vinted. Дані зберігаються локально (IndexedDB/localStorage) — ніякого бекенду.</p>
 
 <div class="tabs">
   <button id="tab-calc" class="active" onclick="showTab('calc')">Калькулятор</button>
@@ -184,7 +191,7 @@ speaker,amazon,60,25,6,0,false,0</textarea>
 <div id="panel-compare" class="hidden">
   <div class="card">
     <h2>Порівняння каналів side-by-side</h2>
-    <p class="muted">Один товар — три платформи.</p>
+    <p class="muted">Один товар — п'ять платформ.</p>
     <div id="compareOut"></div>
   </div>
 </div>
