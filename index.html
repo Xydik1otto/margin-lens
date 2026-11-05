@@ -185,6 +185,9 @@
     <label style="margin-top:14px">What if: підняти ціну на <span id="raiseLbl">0</span>%</label>
     <input id="raiseSlider" type="range" min="0" max="50" step="1" value="0" oninput="render()">
     <div id="whatif" class="muted" style="margin-top:4px"></div>
+    <label style="margin-top:14px">Цільова маржа (%)</label>
+    <input id="targetMargin" type="number" step="1" min="0" value="30" oninput="render()">
+    <div id="targetOut" class="muted" style="margin-top:4px" aria-live="polite"></div>
     <button style="margin-top:12px" onclick="saveScenario()">💾 Зберегти сценарій</button>
     <button class="secondary" style="margin-top:12px" onclick="exportScenarioCsv()">⬇ CSV сценарію</button>
     <button class="secondary" style="margin-top:12px" onclick="exportCompareCsv()">⬇ CSV порівняння</button>
@@ -290,6 +293,11 @@ const I18N = {
     "VAT/PDV": "VAT", "What if: підняти ціну на": "What if: raise price by",
     "💾 Зберегти сценарій": "💾 Save scenario", "⬇ CSV сценарію": "⬇ Scenario CSV",
     "⬇ CSV порівняння": "⬇ Comparison CSV", "🔗 Поділитись лінком": "🔗 Share link",
+    "Цільова маржа (%)": "Target margin (%)",
+    "Факт": "Actual", "vs ціль": "vs target",
+    "вище цілі": "above target", "на цілі": "on target", "нижче цілі": "below target",
+    "Ціна для цілі": "Price to hit target", "Ціль недосяжна при цих зборах": "Target unreachable with these fees",
+    "Задайте цільову маржу, щоб порівняти.": "Set a target margin to compare.",
     // platform notes
     "eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.":
       "eBay: final value fee ~13.25% of (price + shipping) + $0.40 per order.",
@@ -581,6 +589,39 @@ function calculate(inp) {
   };
 }
 
+// ---- Цільова маржа: JS-дзеркало core.target_margin (gap_to_target /
+// price_for_target_margin). Цільова ціна розв'язується аналітично:
+// (P + sc) * (1 - pct_total - target) = cost + shipPaid + fixed.
+function gapToTarget(marginPct, targetPct, eps = 0.05) {
+  const actual = +marginPct.toFixed(2);
+  if (targetPct === null || targetPct === undefined || targetPct <= 0)
+    return { actual, target: null, gap_pp: null, status: "none" };
+  const gap = +(actual - targetPct).toFixed(2);
+  const status = gap > eps ? "above" : gap >= -eps ? "on" : "below";
+  return { actual, target: targetPct, gap_pp: gap, status };
+}
+
+function priceForTargetMargin(inp, targetPct) {
+  const t = targetPct / 100;
+  if (t <= 0 || t >= 1) return null;
+  const vat = (inp.vat_percent || 0) / 100;
+  const sc = inp.shipping_charged || 0;
+  const baseCost = inp.product_cost + inp.shipping_paid;
+  if (inp.platform === "poshmark") {
+    const flat = fixedCur(POSHMARK.flatFee, inp.currency);
+    const d1 = 1 - vat - t;
+    const pFlat = d1 > 1e-9 ? (baseCost + flat - sc * d1) / d1 : Infinity;
+    if (pFlat < POSHMARK.tierBoundary) return Math.max(0, Math.round(pFlat * 100) / 100);
+    const d2 = 1 - vat - POSHMARK.pctOver - t;
+    if (d2 <= 1e-9) return null;
+    return Math.max(0, Math.round((baseCost - sc * d1) / d2 * 100) / 100);
+  }
+  const denom = 1 - pctTotal(inp) - t;
+  if (denom <= 1e-9) return null;
+  const need = baseCost + fixedFees(inp) + platformFixedExtra(inp);
+  return Math.max(0, Math.round(need / denom * 100) / 100 - sc);
+}
+
 function showTab(name) {
   for (const t of ["calc", "batch", "compare", "ads", "scenarios"]) {
     $("panel-" + t).classList.toggle("hidden", t !== name);
@@ -677,6 +718,20 @@ function render() {
     const raised = calculate({ ...inp, price: inp.price * (1 + deltaPct / 100) });
     $("whatif").textContent = `Net: ${money(raised.net)} (margin ${raised.margin.toFixed(1)}%) — +${money(raised.net - r.net)} до поточного`;
   } else $("whatif").textContent = "Пересуньте слайдер, щоб побачити вплив підвищення ціни";
+
+  // Цільова маржа: розрив у п.п. + ціна для досягнення цілі
+  const target = num("targetMargin");
+  if (target > 0) {
+    const g = gapToTarget(r.margin, target);
+    const statusText = { above: t("вище цілі"), on: t("на цілі"), below: t("нижче цілі") }[g.status];
+    const priceNeeded = priceForTargetMargin(inp, target);
+    $("targetOut").innerHTML =
+      `${t("Факт")} ${g.actual.toFixed(1)}% ${t("vs ціль")} ${g.target}%: ` +
+      `<span class="${g.gap_pp >= 0 ? "pos" : "neg"}">${g.gap_pp > 0 ? "+" : ""}${g.gap_pp.toFixed(2)} ${t("п.п.")} — ${statusText}</span>` +
+      (priceNeeded !== null
+        ? ` • ${t("Ціна для цілі")}: <b>${money(priceNeeded)}</b>`
+        : ` • ${t("Ціль недосяжна при цих зборах")}`);
+  } else $("targetOut").textContent = t("Задайте цільову маржу, щоб порівняти.");
 }
 
 function runBatch() {
