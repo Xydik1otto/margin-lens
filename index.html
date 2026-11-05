@@ -196,6 +196,7 @@ tshirt,shopify,25,10,3,0,false,0
 speaker,amazon,60,25,6,0,false,0</textarea>
     <button style="margin-top:10px" onclick="runBatch()">Розрахувати</button>
     <div id="batchOut"></div>
+    <div id="batchHistoryOut"></div>
   </div>
 </div>
 
@@ -555,6 +556,7 @@ function runBatch() {
   const flag = (row, n) => ["1","true","yes","y","так","on"].includes(get(row, n, "").toLowerCase());
   let html = "<table><tr><th>Назва</th><th>Платформа</th><th>Revenue</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>";
   let count = 0;
+  const batchRows = [];
   for (const line of lines.slice(1)) {
     const row = line.split(",").map(c => c.trim());
     try {
@@ -565,7 +567,10 @@ function runBatch() {
         shipping_paid: parseFloat(get(row, "shipping_paid", "0")) || 0,
         shipping_charged: parseFloat(get(row, "shipping_charged", "0")) || 0,
         offsite_ads: flag(row, "offsite_ads"),
+        etsy_ads: flag(row, "etsy_ads"),
+        country: (get(row, "country", "") || "").toUpperCase(),
         vat_percent: parseFloat(get(row, "vat_percent", "0")) || 0,
+        return_rate_pct: parseFloat(get(row, "return_rate_pct", "0")) || 0,
         shopify_monthly_fee: parseFloat(get(row, "shopify_monthly_fee", "0")) || 0,
         shopify_monthly_orders: parseFloat(get(row, "shopify_monthly_orders", "0")) || 0,
         amazon_category: get(row, "amazon_category", "default"),
@@ -574,10 +579,124 @@ function runBatch() {
         units: Math.max(1, parseInt(get(row, "units", "1")) || 1),
       };
       const r = calculate(inp); count++;
-      html += `<tr><td>${row[idx("name")] || "—"}</td><td>${inp.platform}</td><td>${money(r.revenue)}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
-    } catch (e) { html += `<tr><td colspan="7" class="neg">Помилка: ${e.message}</td></tr>`; }
+      const name = row[idx("name")] || "—";
+      batchRows.push({ name, platform: inp.platform, currency: inp.currency,
+        revenue: +r.revenue.toFixed(2), fees: +(r.totalFees + r.vat).toFixed(2),
+        net: +r.net.toFixed(2), margin: +r.margin.toFixed(2) });
+      html += `<tr><td>${escapeHtml(name)}</td><td>${inp.platform}</td><td>${money(r.revenue)}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
+    } catch (e) { html += `<tr><td colspan="7" class="neg">Помилка: ${escapeHtml(e.message)}</td></tr>`; }
   }
-  $("batchOut").innerHTML = html + "</table><p class='muted'>Рядків розраховано: " + count + "</p>";
+  $("batchOut").innerHTML = html + "</table><p class='muted'>Рядків розраховано: " + count + "</p>"
+    + (count ? `<button class="secondary btn-sm" style="margin-top:8px" onclick="saveBatchHistory()" aria-label="Зберегти цей прогін в історію">💾 Зберегти прогін в історію</button>` : "");
+  _lastBatchRows = batchRows;
+  renderBatchHistory();
+}
+
+// ------------------------------------------------------------------
+// Batch history: прогони зберігаються в IndexedDB (store "batches"),
+// trend маржі — середній margin по прогронах (Sparkline SVG).
+// Джерело логіки: core/history.py (avg_margin / margin_trend / summarize_batch).
+// ------------------------------------------------------------------
+
+let _lastBatchRows = [];
+
+function summarizeBatchRows(rows) {
+  // JS mirror of core.history.summarize_batch()
+  if (!rows.length) return { count: 0, avg_margin: 0, total_net: 0, best: null };
+  return {
+    count: rows.length,
+    avg_margin: +(rows.reduce((a, r) => a + (r.margin || 0), 0) / rows.length).toFixed(2),
+    total_net: +rows.reduce((a, r) => a + (r.net || 0), 0).toFixed(2),
+    best: rows.reduce((b, r) => ((r.margin || 0) > (b.margin || 0) ? r : b)).name,
+  };
+}
+
+function saveBatchHistory() {
+  if (!_lastBatchRows.length) { alert("Немає розрахованих рядків — спочатку натисніть «Розрахувати»."); return; }
+  const s = summarizeBatchRows(_lastBatchRows);
+  const rec = { ts: Date.now(), count: s.count, avg_margin: s.avg_margin,
+    total_net: s.total_net, best: s.best, rows: _lastBatchRows };
+  idbPut(STORE_BATCH, rec).then(() => renderBatchHistory())
+    .catch(() => {
+      try {
+        const all = JSON.parse(localStorage.getItem("ml_batch_history") || "[]");
+        all.push(rec);
+        localStorage.setItem("ml_batch_history", JSON.stringify(all));
+        renderBatchHistory();
+      } catch (e) { /* storage unavailable */ }
+    });
+}
+
+async function getBatchHistory() {
+  try {
+    const all = await idbAll(STORE_BATCH);
+    all.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return all;
+  } catch (e) {
+    const all = JSON.parse(localStorage.getItem("ml_batch_history") || "[]");
+    all.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return all;
+  }
+}
+
+async function deleteBatchRun(i) {
+  const all = await getBatchHistory();
+  const rec = all[i];
+  if (!rec) return;
+  if (rec.id !== undefined) {
+    try { await idbDelete(STORE_BATCH, rec.id); }
+    catch (e) {
+      try {
+        const local = JSON.parse(localStorage.getItem("ml_batch_history") || "[]");
+        local.splice(local.findIndex(r => r.ts === rec.ts), 1);
+        localStorage.setItem("ml_batch_history", JSON.stringify(local));
+      } catch (e2) { /* storage unavailable */ }
+    }
+  } else {
+    try {
+      const local = JSON.parse(localStorage.getItem("ml_batch_history") || "[]");
+      local.splice(local.findIndex(r => r.ts === rec.ts), 1);
+      localStorage.setItem("ml_batch_history", JSON.stringify(local));
+    } catch (e) { /* storage unavailable */ }
+  }
+  renderBatchHistory();
+}
+
+// Sparkline: margin trend across runs (SVG polyline, zero-baseline scaling).
+function marginTrendSvg(points) {
+  if (points.length < 2) return "";
+  const W = 560, H = 120, PAD = 24;
+  const vals = points.map(p => p[1]);
+  const min = Math.min(...vals, 0), max = Math.max(...vals, 0);
+  const range = (max - min) || 1;
+  const xs = i => PAD + i * (W - 2 * PAD) / (points.length - 1);
+  const ys = v => PAD + (max - v) / range * (H - 2 * PAD);
+  const zeroY = ys(0);
+  const poly = points.map((p, i) => `${xs(i).toFixed(1)},${ys(p[1]).toFixed(1)}`).join(" ");
+  const dots = points.map((p, i) =>
+    `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p[1]).toFixed(1)}" r="3" fill="var(--accent)"><title>${new Date(p[0]).toLocaleString()}: ${p[1].toFixed(2)}%</title></circle>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Тренд середньої маржі по прогронах" style="max-width:${W}px;display:block;margin-top:8px">`
+    + `<line x1="${PAD}" y1="${zeroY.toFixed(1)}" x2="${W - PAD}" y2="${zeroY.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>`
+    + `<polyline points="${poly}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`;
+}
+
+async function renderBatchHistory() {
+  const all = await getBatchHistory();
+  const el = $("batchHistoryOut");
+  if (!el) return;
+  if (!all.length) { el.innerHTML = "<p class='muted' style='margin-top:14px'>Історія прогонів порожня — розрахуйте batch і натисніть «Зберегти прогін».</p>"; return; }
+  // trend across runs (JS mirror of core.history.margin_trend)
+  const pts = all.map(r => [r.ts, r.avg_margin]);
+  const first = pts[0][1], last = pts[pts.length - 1][1];
+  const delta = +(last - first).toFixed(2);
+  const direction = pts.length < 2 || Math.abs(delta) <= 0.05 ? "flat" : (delta > 0 ? "up" : "down");
+  const arrow = direction === "up" ? '<span class="pos">▲</span>' : direction === "down" ? '<span class="neg">▼</span>' : "—";
+  el.innerHTML =
+    `<div style="margin-top:14px"><b>Тренд маржі</b> ${arrow} ${delta > 0 ? "+" : ""}${delta.toFixed(2)} п.п. (перший прогін ${first.toFixed(2)}% → останній ${last.toFixed(2)}%)`
+    + marginTrendSvg(pts) + "</div>"
+    + `<table style="margin-top:8px"><tr><th>Дата</th><th>Товарів</th><th>Сер. маржа</th><th>Net разом</th><th>Кращий</th><th></th></tr>`
+    + all.map((r, i) => `<tr><td>${new Date(r.ts).toLocaleString()}</td><td>${r.count}</td><td>${r.avg_margin.toFixed(2)}%</td><td class="${r.total_net >= 0 ? "pos" : "neg"}">${money(r.total_net)}</td><td>${escapeHtml(r.best || "—")}</td><td><button class="secondary btn-sm" aria-label="Видалити прогін з історії" onclick="deleteBatchRun(${i})">✕</button></td></tr>`).join("")
+    + `</table>`;
 }
 
 function renderCompare() {
@@ -625,8 +744,8 @@ function compareBarChart(results) {
 // Migration: on first load, localStorage.ml_scenarios -> IndexedDB.
 // ------------------------------------------------------------------
 
-const IDB_NAME = "margin-lens", IDB_VERSION = 1;
-const STORE_SCEN = "scenarios", STORE_KV = "kv";
+const IDB_NAME = "margin-lens", IDB_VERSION = 2;
+const STORE_SCEN = "scenarios", STORE_KV = "kv", STORE_BATCH = "batches";
 let _idbPromise = null, _scenarioCache = [];
 
 function openDb() {
@@ -638,6 +757,7 @@ function openDb() {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_SCEN)) db.createObjectStore(STORE_SCEN, { keyPath: "id", autoIncrement: true });
       if (!db.objectStoreNames.contains(STORE_KV)) db.createObjectStore(STORE_KV);
+      if (!db.objectStoreNames.contains(STORE_BATCH)) db.createObjectStore(STORE_BATCH, { keyPath: "id", autoIncrement: true });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
