@@ -207,6 +207,8 @@ speaker,amazon,60,25,6,0,false,0</textarea>
     <h2>Порівняння каналів side-by-side</h2>
     <p class="muted">Один товар — усі платформи.</p>
     <div id="compareOut"></div>
+    <button class="secondary btn-sm" style="margin-top:10px" onclick="copyCompareMarkdown()" aria-label="Копіювати порівняння як Markdown-таблицю">📋 Copy as Markdown</button>
+    <div id="copyMsg" class="muted" role="status" aria-live="polite" style="margin-top:6px"></div>
   </div>
 </div>
 
@@ -588,7 +590,8 @@ function runBatch() {
     } catch (e) { html += `<tr><td colspan="7" class="neg">Помилка: ${escapeHtml(e.message)}</td></tr>`; }
   }
   $("batchOut").innerHTML = html + "</table><p class='muted'>Рядків розраховано: " + count + "</p>"
-    + (count ? `<button class="secondary btn-sm" style="margin-top:8px" onclick="saveBatchHistory()" aria-label="Зберегти цей прогін в історію">💾 Зберегти прогін в історію</button>` : "");
+    + (count ? `<button class="secondary btn-sm" style="margin-top:8px" onclick="saveBatchHistory()" aria-label="Зберегти цей прогін в історію">💾 Зберегти прогін в історію</button>
+    <button class="secondary btn-sm" style="margin-top:8px;margin-left:8px" onclick="copyBatchMarkdown()" aria-label="Копіювати результати як Markdown-таблицю">📋 Copy as Markdown</button>` : "");
   _lastBatchRows = batchRows;
   renderBatchHistory();
   renderDuplicates();
@@ -754,6 +757,80 @@ async function renderBatchHistory() {
     + `<table style="margin-top:8px"><tr><th>Дата</th><th>Товарів</th><th>Сер. маржа</th><th>Net разом</th><th>Кращий</th><th></th></tr>`
     + all.map((r, i) => `<tr><td>${new Date(r.ts).toLocaleString()}</td><td>${r.count}</td><td>${r.avg_margin.toFixed(2)}%</td><td class="${r.total_net >= 0 ? "pos" : "neg"}">${money(r.total_net)}</td><td>${escapeHtml(r.best || "—")}</td><td><button class="secondary btn-sm" aria-label="Видалити прогін з історії" onclick="deleteBatchRun(${i})">✕</button></td></tr>`).join("")
     + `</table>`;
+}
+
+// ------------------------------------------------------------------
+// Copy as Markdown: результати для постів/звітів (GFM-таблиця).
+// Джерело логіки: core/md_export.py (md_escape / markdown_table).
+// ------------------------------------------------------------------
+
+function mdEscape(cell) {
+  return String(cell).replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+function markdownTable(headers, rows) {
+  // JS mirror of core.md_export.markdown_table()
+  return ["| " + headers.map(mdEscape).join(" | ") + " |",
+          "|" + headers.map(() => "---").join("|") + "|",
+          ...rows.map(r => "| " + r.map(mdEscape).join(" | ") + " |")].join("\n");
+}
+
+function batchResultsMarkdown(rows, title) {
+  const table = markdownTable(
+    ["Назва", "Платформа", "Revenue", "Збори", "Net", "Margin %"],
+    rows.map(r => [r.name, r.platform, (r.revenue || 0).toFixed(2),
+                   (r.fees || 0).toFixed(2), (r.net || 0).toFixed(2),
+                   (r.margin || 0).toFixed(1)]));
+  return `## ${title}\n\n${table}\n`;
+}
+
+function compareResultsMarkdown(rows, title) {
+  const table = markdownTable(
+    ["Канал", "Збори", "VAT", "Net", "Margin %", "Breakeven"],
+    rows.map(r => [r.platform, (r.fees || 0).toFixed(2), (r.vat || 0).toFixed(2),
+                   (r.net || 0).toFixed(2), (r.margin || 0).toFixed(2),
+                   r.breakeven === null || r.breakeven === undefined ? "—" : r.breakeven.toFixed(2)]));
+  return `## ${title}\n\n${table}\n`;
+}
+
+async function copyToClipboard(text, okMsg) {
+  const flash = msg => {
+    const el = $("copyMsg");
+    if (!el) { alert(msg); return; }
+    el.textContent = msg;
+    setTimeout(() => { el.textContent = ""; }, 3000);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(okMsg);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      flash(okMsg);
+    } catch (e2) { flash("Не вдалося скопіювати"); }
+    ta.remove();
+  }
+}
+
+function copyBatchMarkdown() {
+  if (!_lastBatchRows.length) { alert("Немає результатів — спочатку натисніть «Розрахувати»."); return; }
+  copyToClipboard(batchResultsMarkdown(_lastBatchRows, "Margin Lens — результати"),
+    "✓ Markdown-таблицю скопійовано");
+}
+
+function copyCompareMarkdown() {
+  const inp = readInputs();
+  const rows = ["etsy", "shopify", "amazon", "ebay", "vinted", "depop", "poshmark"].map(p => {
+    const r = calculate({ ...inp, platform: p });
+    return { platform: p, fees: r.totalFees, vat: r.vat, net: r.net,
+             margin: r.margin, breakeven: r.breakeven };
+  });
+  copyToClipboard(compareResultsMarkdown(rows, "Margin Lens — порівняння каналів"),
+    "✓ Markdown-таблицю скопійовано");
 }
 
 function renderCompare() {
