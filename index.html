@@ -85,6 +85,7 @@
   <button id="tab-compare" onclick="showTab('compare')">Порівняння каналів</button>
   <button id="tab-ads" onclick="showTab('ads')">Ad Profit</button>
   <button id="tab-season" onclick="showTab('season')">Сезонність</button>
+  <button id="tab-quick" onclick="showTab('quick')">⚡ Quick-calc</button>
   <button id="tab-history" onclick="showTab('history')">Історія тарифів</button>
   <button id="tab-scenarios" onclick="showTab('scenarios')">Сценарії</button>
 </div>
@@ -275,6 +276,21 @@ speaker,amazon,60,25,6,0,false,0</textarea>
   </div>
 </div>
 
+<!-- QUICK CALC (мини-режим) -->
+<div id="panel-quick" class="hidden">
+  <div class="card">
+    <h2>Quick-calc: швидка оцінка</h2>
+    <p class="muted">Мінімум полів: платформа, ціна, собівартість — миттєвий net і маржа. Без доставки, VAT і повернень.</p>
+    <div class="row3">
+      <div><label>Платформа</label><select id="qPlatform" onchange="renderQuick()" aria-label="Платформа (quick-calc)"></select></div>
+      <div><label>Ціна</label><input id="qPrice" type="number" step="0.01" value="30.00" oninput="renderQuick()"></div>
+      <div><label>Собівартість</label><input id="qCost" type="number" step="0.01" value="8.00" oninput="renderQuick()"></div>
+    </div>
+    <div class="metrics" id="quickMetrics" style="margin-top:12px" aria-live="polite"></div>
+    <p class="muted" style="margin-top:8px" id="quickHint">Повний режим — у вкладці «Калькулятор»: доставка, VAT, повернення, цільова маржа, сценарії.</p>
+  </div>
+</div>
+
 <script src="core/fees.generated.js"></script>
 <script>
 "use strict";
@@ -334,6 +350,12 @@ const I18N = {
       "A dated log of the fee-rate changes the calculator models (source: core/rate_history.py, effective dates from public platform announcements). When changing constants in core/fees.py, add an entry here and run python generate_js.py.",
     "Зміна": "Change",
     "Без записів (змін не зафіксовано з моменту запуску калькулятора):": "Without entries (no changes recorded since the calculator launched):",
+    "⚡ Quick-calc": "⚡ Quick-calc", "Quick-calc: швидка оцінка": "Quick-calc: quick estimate",
+    "Мінімум полів: платформа, ціна, собівартість — миттєвий net і маржа. Без доставки, VAT і повернень.":
+      "Minimal inputs: platform, price, cost of goods — instant net and margin. No shipping, VAT or returns.",
+    "Ціна": "Price",
+    "Повний режим — у вкладці «Калькулятор»: доставка, VAT, повернення, цільова маржа, сценарії.":
+      "Full mode is in the Calculator tab: shipping, VAT, returns, target margin, scenarios.",
     // platform notes
     "eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.":
       "eBay: final value fee ~13.25% of (price + shipping) + $0.40 per order.",
@@ -660,7 +682,7 @@ function priceForTargetMargin(inp, targetPct) {
 }
 
 function showTab(name) {
-  for (const t of ["calc", "batch", "compare", "ads", "scenarios", "season", "history"]) {
+  for (const t of ["calc", "batch", "compare", "ads", "scenarios", "season", "quick", "history"]) {
     $("panel-" + t).classList.toggle("hidden", t !== name);
     $("tab-" + t).classList.toggle("active", t === name);
   }
@@ -1506,9 +1528,34 @@ function renderRateHistory() {
     `<p class="muted" style="margin-top:8px">${t("Без записів (змін не зафіксовано з моменту запуску калькулятора):")} ${noData.join(", ") || "—"}</p>`;
 }
 
+// ------------------------------------------------------------------
+// Quick-calc (мини-режим): платформа + ціна + собівартість -> net/margin.
+// Логіка — той самий протестований calculate(); лише мінімум вводу.
+// ------------------------------------------------------------------
+
+function renderQuick() {
+  const inp = {
+    platform: $("qPlatform").value, price: num("qPrice"), product_cost: num("qCost"),
+    shipping_paid: 0, shipping_charged: 0, currency: cur(),
+  };
+  const r = calculate(inp);
+  const cls = v => v >= 0 ? "pos" : "neg";
+  $("quickMetrics").innerHTML = `
+    <div class="metric"><div class="v ${cls(r.net)}">${money(r.net)}</div><div class="k">${t("Net profit")}</div></div>
+    <div class="metric"><div class="v ${cls(r.margin)}">${r.margin.toFixed(1)}%</div><div class="k">${t("Margin")}</div></div>
+    <div class="metric"><div class="v">${r.breakeven === null ? "—" : money(r.breakeven)}</div><div class="k">${t("Breakeven ціна")}</div></div>`;
+}
+
+function initQuickPanel() {
+  const sel = $("qPlatform");
+  if (!sel.options.length)
+    for (const o of [...$("platform").options]) sel.add(new Option(o.textContent, o.value));
+  renderQuick();
+}
+
 // Patch showTab to also refresh comparison & ads panels
 const _showTab = showTab;
-showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); if (name === "season") renderSeason(); if (name === "history") renderRateHistory(); };
+showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); if (name === "season") renderSeason(); if (name === "history") renderRateHistory(); if (name === "quick") renderQuick(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
 applyI18n();          // UA/EN: apply saved or detected language
@@ -1519,6 +1566,7 @@ try {
 migrateToIdb();       // one-time migration: localStorage scenarios -> IndexedDB
 render();
 initSeasonPanel();    // вкладка «Сезонність»: опції нішей/місяців + поточний місяць
+initQuickPanel();     // вкладка «Quick-calc»: платформи з калькулятора + перший рендер
 refreshFxRates();     // async: live ECB rates (cache -> fetch -> fallback constants)
 </script>
 </body>
