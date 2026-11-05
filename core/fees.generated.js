@@ -22,6 +22,14 @@ window.ML_FEES = {
   "VINTED": {
     "sellerPct": 0.0
   },
+  "DEPOP": {
+    "marketplacePct": 0.1
+  },
+  "POSHMARK": {
+    "flatFee": 2.95,
+    "pctOver": 0.2,
+    "tierBoundary": 15.0
+  },
   "AMAZON_REFERRAL": {
     "default": 0.15,
     "electronics": 0.08,

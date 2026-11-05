@@ -81,10 +81,23 @@ EBAY = {
 # a shipping discount, it is modeled via shipping_paid > 0.
 VINTED = {"seller_pct": 0.0}
 
+# Depop: flat 10% marketplace fee on the total sale (item + shipping charged).
+# Payment processing (Depop Payments, ~3.3% + $0.45 in the US) is not part of
+# the preset — sellers who want it can fold it into product_cost/shipping_paid.
+DEPOP = {"marketplace_pct": 0.10}
+
+# Poshmark: US-style two-tier commission on the item price (shipping is paid
+# by the buyer through Poshmark's prepaid label, so it never touches the
+# seller's fee stack):
+#   - item price <  $15 -> flat $2.95
+#   - item price >= $15 -> 20% of the item price
+POSHMARK_FLAT_UNDER = 15.00
+POSHMARK = {"flat_fee_under": 2.95, "pct_over": 0.20}
+
 
 @dataclass
 class FeeInputs:
-    platform: str                 # "etsy" | "shopify" | "amazon" | "ebay" | "vinted"
+    platform: str                 # "etsy"|"shopify"|"amazon"|"ebay"|"vinted"|"depop"|"poshmark"
     price: float                  # item sale price
     product_cost: float           # COGS per unit
     shipping_paid: float          # what YOU pay for shipping
@@ -201,12 +214,29 @@ def vinted_fees(inp: FeeInputs) -> dict:
     return {}  # 0% seller fee; buyer protection is paid by the buyer
 
 
+def depop_fees(inp: FeeInputs) -> dict:
+    """Depop: flat 10% of the total sale (item + shipping charged)."""
+    base = inp.price + inp.shipping_charged
+    return {"marketplace": round(DEPOP["marketplace_pct"] * base, 4)}
+
+
+def poshmark_fees(inp: FeeInputs) -> dict:
+    """Poshmark: flat $2.95 under $15 item price, 20% of item price at $15+."""
+    if inp.price < POSHMARK_FLAT_UNDER:
+        fee = fixed_in_currency(POSHMARK["flat_fee_under"], inp.currency)
+    else:
+        fee = POSHMARK["pct_over"] * inp.price
+    return {"commission": round(fee, 4)}
+
+
 _PLATFORM_FEE_FN = {
     "etsy": etsy_fees,
     "shopify": shopify_fees,
     "amazon": amazon_fees,
     "ebay": ebay_fees,
     "vinted": vinted_fees,
+    "depop": depop_fees,
+    "poshmark": poshmark_fees,
 }
 
 
@@ -233,6 +263,12 @@ def _platform_pct_list(inp: FeeInputs) -> list[float]:
         parts = [EBAY["final_value_pct"]]
     elif p == "vinted":
         parts = []
+    elif p == "depop":
+        parts = [DEPOP["marketplace_pct"]]
+    elif p == "poshmark":
+        # commission applies to the item price only; modeled against the
+        # current price so the breakeven solver picks the right tier
+        parts = [] if inp.price < POSHMARK_FLAT_UNDER else [POSHMARK["pct_over"]]
     else:
         raise ValueError(f"unknown platform: {inp.platform!r}")
     return parts
@@ -263,9 +299,34 @@ def _fixed_fees(inp: FeeInputs) -> float:
         fixed = round(fixed_in_currency(EBAY["per_order_fixed"], inp.currency), 4)
     elif p == "vinted":
         fixed = 0.0
+    elif p == "depop":
+        fixed = 0.0
+    elif p == "poshmark":
+        fixed = round(fixed_in_currency(POSHMARK["flat_fee_under"], inp.currency), 4) \
+            if inp.price < POSHMARK_FLAT_UNDER else 0.0
     else:
         raise ValueError(f"unknown platform: {inp.platform!r}")
     return fixed
+
+
+def _poshmark_breakeven(inp: FeeInputs) -> float:
+    """Poshmark breakeven across the two commission tiers (flat $2.95 under
+    $15 item price, 20% of the item price at $15+). Shipping is buyer-paid
+    (Poshmark prepaid label), so the commission never covers shipping charged.
+    """
+    vat = inp.vat_percent / 100.0
+    flat = fixed_in_currency(POSHMARK["flat_fee_under"], inp.currency)
+    cost = inp.product_cost + inp.shipping_paid
+    # flat tier: (P + sc) * (1 - vat) - flat - cost = 0
+    p_flat = ((cost + flat) / (1.0 - vat) - inp.shipping_charged
+              if vat < 1.0 else float("inf"))
+    # pct tier: (P + sc) * (1 - vat) - pct * P - cost = 0
+    denom = 1.0 - vat - POSHMARK["pct_over"]
+    p_pct = ((cost - inp.shipping_charged * (1.0 - vat)) / denom
+             if denom > 1e-9 else float("inf"))
+    if p_flat < POSHMARK_FLAT_UNDER:
+        return round(max(0.0, p_flat), 2)
+    return round(max(0.0, p_pct), 2)
 
 
 def breakeven_price(inp: FeeInputs) -> float | None:
@@ -273,7 +334,14 @@ def breakeven_price(inp: FeeInputs) -> float | None:
 
     net(P) = P_total * (1 - pct_total) - fixed_fees - product_cost - shipping_paid,
     where P_total = P + shipping_charged.
+
+    Poshmark is solved analytically across both commission tiers: the fee
+    structure is discontinuous at $15 (flat $2.95 below, 20% of the item price
+    at $15+), so a single linear solve would return a price that belongs to
+    the wrong tier.
     """
+    if inp.platform == "poshmark":
+        return _poshmark_breakeven(inp)
     denom = 1.0 - _pct_total(inp)
     if denom <= 1e-9:
         return None  # percentage fees >= 100%: no break-even exists
