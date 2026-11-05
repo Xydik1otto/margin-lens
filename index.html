@@ -504,11 +504,41 @@ function runBatch() {
 function renderCompare() {
   const inp = readInputs();
   const platforms = ["etsy", "shopify", "amazon", "ebay", "vinted"];
-  const html = platforms.map(p => {
-    const r = calculate({ ...inp, platform: p });
-    return `<tr><td>${p}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
+  const results = platforms.map(p => ({ p, r: calculate({ ...inp, platform: p }) }));
+  const html = results.map(({ p, r }) =>
+    `<tr><td>${p}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`
+  ).join("");
+  $("compareOut").innerHTML =
+    "<table><tr><th>Канал</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>" + html + "</table>" +
+    compareBarChart(results);
+}
+
+// SVG bar chart: net profit side-by-side across platforms.
+// Zero-line in the middle when profits have mixed signs; bars scale to max |net|.
+function compareBarChart(results) {
+  const nets = results.map(({ r }) => r.net);
+  const maxAbs = Math.max(...nets.map(Math.abs), 0.01);
+  const W = 560, BAR = 30, GAP = 14, PAD = 90, LABEL = 46;
+  const hasNeg = nets.some(v => v < 0);
+  const zero = hasNeg ? PAD + (W - PAD) * maxAbs / (2 * maxAbs) : PAD; // x of net=0
+  const H = results.length * (BAR + GAP) + LABEL;
+  const bars = results.map(({ p, r }, i) => {
+    const y = i * (BAR + GAP);
+    const w = Math.abs(r.net) / maxAbs * (W - PAD) / (hasNeg ? 2 : 1);
+    const x = r.net >= 0 ? zero : zero - w;
+    const color = r.net >= 0 ? "var(--good)" : "var(--bad)";
+    const labelX = r.net >= 0 ? x + w + 6 : x - 6;
+    const anchor = r.net >= 0 ? "start" : "end";
+    return `<text x="8" y="${y + BAR / 2 + 4}" font-size="12" fill="var(--muted)">${p}</text>` +
+      `<rect x="${x.toFixed(1)}" y="${y}" width="${Math.max(w, 1).toFixed(1)}" height="${BAR}" rx="3" fill="${color}" opacity="0.85"><title>${p}: ${money(r.net)}</title></rect>` +
+      `<text x="${labelX.toFixed(1)}" y="${y + BAR / 2 + 4}" font-size="11" fill="var(--fg)" text-anchor="${anchor}">${money(r.net)}</text>`;
   }).join("");
-  $("compareOut").innerHTML = "<table><tr><th>Канал</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>" + html + "</table>";
+  const axis = hasNeg
+    ? `<line x1="${zero}" y1="0" x2="${zero}" y2="${H - LABEL}" stroke="var(--border)" stroke-dasharray="3 3"/>` +
+      `<text x="${zero}" y="${H - 8}" font-size="10" fill="var(--muted)" text-anchor="middle">net = 0</text>`
+    : `<line x1="${PAD}" y1="0" x2="${PAD}" y2="${H - LABEL}" stroke="var(--border)" stroke-dasharray="3 3"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Net profit по платформах" style="margin-top:12px;max-width:${W}px;display:block">${axis}${bars}</svg>` +
+    `<p class="muted">Стовпчики — net profit того ж товару по платформах (зелені — прибуток, червоні — збиток).</p>`;
 }
 
 // ------------------------------------------------------------------
