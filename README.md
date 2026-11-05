@@ -102,7 +102,6 @@ margin-lens/
 ├── CONTRIBUTING.md         # як долучитися (тарифи — найчастіший PR)
 ├── CHANGELOG.md            # Keep a Changelog
 ├── .github/workflows/deploy.yml  # автодеплой на GitHub Pages (push → main)
-├── .github/FUNDING.yml
 └── tests/                  # test_fees, test_fx, test_currency, test_ebay_vinted,
                             # test_depop_poshmark, test_etsy_regional, test_history,
                             # test_dedupe, test_md_export, test_i18n, test_a11y

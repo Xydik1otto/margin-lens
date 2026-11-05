@@ -5,6 +5,14 @@
 Формат базується на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 версіонування — [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- Монетизаційний scaffolding: `.github/FUNDING.yml` (Sponsors-кнопка), секцію
+  «Монетизація» з PLAN.md (Freemium/Pro-тарифи, конверсія free→Pro), згадку
+  FUNDING.yml у структурі README. Проєкт — **100% безкоштовний open-source**:
+  усі фічі (batch CSV без лімітів, необмежені сценарії, export) доступні всім.
+
 ## [1.0.0] — 2026-11-05
 
 ### Added
