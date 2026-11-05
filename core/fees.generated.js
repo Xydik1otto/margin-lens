@@ -35,6 +35,20 @@ window.ML_FEES = {
     "IT",
     "UK"
   ],
+  "FX": {
+    "rates": {
+      "EUR": 1.0,
+      "USD": 1.08,
+      "GBP": 0.855,
+      "UAH": 45.2
+    },
+    "symbols": {
+      "EUR": "\u20ac",
+      "USD": "$",
+      "GBP": "\u00a3",
+      "UAH": "\u20b4"
+    }
+  },
   "SHIP_PRESETS": {
     "us_domestic": {
       "label": "\u0421\u0428\u0410 (\u0432\u043d\u0443\u0442\u0440\u0456\u0448\u043d\u044f)",

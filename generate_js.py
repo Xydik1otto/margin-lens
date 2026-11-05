@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from core.fx import FALLBACK_RATES, SYMBOLS
 from core.fees import (
     AMAZON_PER_ITEM_FEE,
     AMAZON_REFERRAL,
@@ -42,6 +43,7 @@ PAYLOAD = {
     "AMAZON_REFERRAL": AMAZON_REFERRAL,
     "AMAZON_PER_ITEM": AMAZON_PER_ITEM_FEE,
     "REGULATORY_COUNTRIES": sorted(REGULATORY_COUNTRIES),
+    "FX": {"rates": FALLBACK_RATES, "symbols": SYMBOLS},
     "SHIP_PRESETS": {k: {"label": v["label"], "paid": v["paid"], "charged": v["charged"]}
                      for k, v in ETSY_SHIPPING_PRESETS.items()},
 }

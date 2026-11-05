@@ -2,12 +2,21 @@
 
 This module is the tested source of truth for fee structures. The SPA
 (index.html) mirrors the same numbers in JavaScript for offline use.
-All amounts are in the seller's currency units (USD by default).
+
+Currency: calculations are performed in the seller's working currency
+(``FeeInputs.currency``, default USD). Percentage fees are currency-neutral;
+fixed fees charged by platforms in USD (Etsy listing/payment fixed fee,
+Amazon per-item fee, eBay per-order fee) are converted to the working
+currency with ECB-based rates from ``core.fx`` (offline fallback constants).
+Inputs the user types in their own currency (price, costs, Shopify monthly
+subscription) are taken as-is.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+
+from core.fx import from_usd, normalize
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +84,7 @@ class FeeInputs:
     etsy_ads: bool = False        # Etsy Ads fee (12.5%) on ads-attributed sales
     country: str = ""             # seller country code (ISO), for regulatory fee
     return_rate_pct: float = 0.0  # expected % of orders returned/refunded
+    currency: str = "USD"         # working currency: EUR | USD | GBP | UAH
     # aggregated over one order; keep 1 for a single-unit sale
     units: int = 1
 
@@ -89,9 +99,16 @@ class FeeInputs:
             shipping_charged=max(0.0, self.shipping_charged),
             vat_percent=max(0.0, self.vat_percent),
             country=self.country.strip().upper(),
+            currency=normalize(self.currency),
             return_rate_pct=min(max(0.0, self.return_rate_pct), 100.0),
             units=max(1, int(self.units or 1)),
         )
+
+
+def fixed_in_currency(usd_amount: float, currency: str) -> float:
+    """Platform fixed fee quoted in USD -> seller's working currency."""
+    cur = normalize(currency)
+    return from_usd(usd_amount, cur) if cur != "USD" else usd_amount
 
 
 @dataclass
@@ -121,10 +138,11 @@ def shipping_margin(inp: FeeInputs) -> float:
 
 def etsy_fees(inp: FeeInputs) -> dict:
     country = inp.country.strip().upper()
-    fees = {"listing": ETSY["listing_fee"] * inp.units}
+    fees = {"listing": round(fixed_in_currency(ETSY["listing_fee"], inp.currency) * inp.units, 4)}
     base = inp.price + inp.shipping_charged
     fees["transaction"] = round(ETSY["transaction_pct"] * base, 4)
-    fees["payment_processing"] = round(ETSY["payment_pct"] * base + ETSY["payment_fixed"], 4)
+    fees["payment_processing"] = round(
+        ETSY["payment_pct"] * base + fixed_in_currency(ETSY["payment_fixed"], inp.currency), 4)
     if inp.offsite_ads:
         fees["offsite_ads"] = round(ETSY["offsite_ads_pct"] * base, 4)
     if inp.etsy_ads:
@@ -137,7 +155,9 @@ def etsy_fees(inp: FeeInputs) -> dict:
 def shopify_fees(inp: FeeInputs) -> dict:
     base = inp.price + inp.shipping_charged
     fees = {
-        "payment_processing": round(SHOPIFY["payment_pct"] * base + SHOPIFY["payment_fixed"], 4),
+        "payment_processing": round(
+            SHOPIFY["payment_pct"] * base
+            + fixed_in_currency(SHOPIFY["payment_fixed"], inp.currency), 4),
     }
     if inp.shopify_monthly_fee > 0 and inp.shopify_monthly_orders > 0:
         # unknown volume: do not silently charge the whole fee
@@ -151,7 +171,8 @@ def amazon_fees(inp: FeeInputs) -> dict:
     pct = AMAZON_REFERRAL.get(inp.amazon_category.lower(), AMAZON_REFERRAL["default"])
     fees = {"referral": round(pct * base, 4)}
     if inp.amazon_per_item_fee:
-        fees["per_item"] = AMAZON_PER_ITEM_FEE * inp.units
+        fees["per_item"] = round(
+            fixed_in_currency(AMAZON_PER_ITEM_FEE, inp.currency) * inp.units, 4)
     return fees
 
 
@@ -193,13 +214,15 @@ def _fixed_fees(inp: FeeInputs) -> float:
     """Fixed (per-order) fee components independent of price."""
     p = inp.platform
     if p == "etsy":
-        fixed = ETSY["listing_fee"] * inp.units + ETSY["payment_fixed"]
+        fixed = fixed_in_currency(ETSY["listing_fee"], inp.currency) * inp.units \
+            + fixed_in_currency(ETSY["payment_fixed"], inp.currency)
     elif p == "shopify":
-        fixed = SHOPIFY["payment_fixed"]
+        fixed = fixed_in_currency(SHOPIFY["payment_fixed"], inp.currency)
         if inp.shopify_monthly_fee > 0 and inp.shopify_monthly_orders > 0:
             fixed += inp.shopify_monthly_fee / inp.shopify_monthly_orders * inp.units
     elif p == "amazon":
-        fixed = AMAZON_PER_ITEM_FEE * inp.units if inp.amazon_per_item_fee else 0.0
+        fixed = round(fixed_in_currency(AMAZON_PER_ITEM_FEE, inp.currency) * inp.units, 4) \
+            if inp.amazon_per_item_fee else 0.0
     else:
         raise ValueError(f"unknown platform: {inp.platform!r}")
     return fixed
@@ -238,7 +261,8 @@ def calculate(inp: FeeInputs) -> FeeResult:
     net_adj, margin_adj = net, margin
     if inp.return_rate_pct > 0:
         rate = inp.return_rate_pct / 100.0
-        listing_lost = ETSY["listing_fee"] * inp.units if inp.platform == "etsy" else 0.0
+        listing_lost = fixed_in_currency(ETSY["listing_fee"], inp.currency) * inp.units \
+            if inp.platform == "etsy" else 0.0
         net_returned = -(inp.product_cost + inp.shipping_paid + listing_lost)
         net_adj = (1.0 - rate) * net + rate * net_returned
         margin_adj = (net_adj / revenue * 100.0) if revenue > 0 else 0.0
@@ -311,7 +335,7 @@ def parse_csv(text: str) -> list[FeeInputs]:
 
     Expected header (order-insensitive, case-insensitive):
     name,platform,price,product_cost,shipping_paid,shipping_charged
-    Optional columns: offsite_ads(true/false), vat_percent, units,
+    Optional columns: offsite_ads(true/false), vat_percent, units, currency,
     shopify_monthly_fee, shopify_monthly_orders, amazon_category,
     amazon_per_item_fee(true/false).
     Returns a list of FeeInputs; 'name' is informational only.
@@ -351,6 +375,7 @@ def parse_csv(text: str) -> list[FeeInputs]:
             shopify_monthly_orders=float(col(row, "shopify_monthly_orders", "0")),
             amazon_category=col(row, "amazon_category", "default"),
             amazon_per_item_fee=flag(row, "amazon_per_item_fee"),
+            currency=col(row, "currency", "USD"),
             units=int(col(row, "units", "1") or 1),
         ))
     return rows
