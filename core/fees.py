@@ -20,7 +20,12 @@ ETSY = {
     "payment_pct": 0.03,          # payment processing
     "payment_fixed": 0.25,
     "offsite_ads_pct": 0.15,      # optional; 12% for sellers > $10k/yr
+    "ads_pct": 0.125,             # Etsy Ads fee on ads-attributed orders (optional)
+    "regulatory_pct": 0.0032,     # regulatory operating fee (UK/FR/IT/ES)
 }
+
+# Countries where Etsy charges the 0.32% regulatory operating fee.
+REGULATORY_COUNTRIES = {"GB", "UK", "FR", "IT", "ES"}
 
 SHOPIFY = {
     "payment_pct": 0.029,         # online card rate (Basic plan)
@@ -56,6 +61,8 @@ class FeeInputs:
     shopify_monthly_orders: float = 0  # orders/month used for spreading
     amazon_category: str = "default"
     amazon_per_item_fee: bool = False  # individual selling plan $0.99
+    etsy_ads: bool = False        # Etsy Ads fee (12.5%) on ads-attributed sales
+    country: str = ""             # seller country code (ISO), for regulatory fee
     # aggregated over one order; keep 1 for a single-unit sale
     units: int = 1
 
@@ -69,6 +76,7 @@ class FeeInputs:
             shipping_paid=max(0.0, self.shipping_paid),
             shipping_charged=max(0.0, self.shipping_charged),
             vat_percent=max(0.0, self.vat_percent),
+            country=self.country.strip().upper(),
             units=max(1, int(self.units or 1)),
         )
 
@@ -91,12 +99,17 @@ class FeeResult:
 # ---------------------------------------------------------------------------
 
 def etsy_fees(inp: FeeInputs) -> dict:
+    country = inp.country.strip().upper()
     fees = {"listing": ETSY["listing_fee"] * inp.units}
     base = inp.price + inp.shipping_charged
     fees["transaction"] = round(ETSY["transaction_pct"] * base, 4)
     fees["payment_processing"] = round(ETSY["payment_pct"] * base + ETSY["payment_fixed"], 4)
     if inp.offsite_ads:
         fees["offsite_ads"] = round(ETSY["offsite_ads_pct"] * base, 4)
+    if inp.etsy_ads:
+        fees["etsy_ads"] = round(ETSY["ads_pct"] * base, 4)
+    if country in REGULATORY_COUNTRIES:
+        fees["regulatory"] = round(ETSY["regulatory_pct"] * base, 4)
     return fees
 
 
@@ -140,6 +153,10 @@ def _pct_total(inp: FeeInputs) -> float:
         parts = [ETSY["transaction_pct"], ETSY["payment_pct"]]
         if inp.offsite_ads:
             parts.append(ETSY["offsite_ads_pct"])
+        if inp.etsy_ads:
+            parts.append(ETSY["ads_pct"])
+        if inp.country.strip().upper() in REGULATORY_COUNTRIES:
+            parts.append(ETSY["regulatory_pct"])
     elif p == "shopify":
         parts = [SHOPIFY["payment_pct"]]
     elif p == "amazon":
@@ -249,6 +266,8 @@ def parse_csv(text: str) -> list[FeeInputs]:
             shipping_paid=float(col(row, "shipping_paid", "0")),
             shipping_charged=float(col(row, "shipping_charged", "0")),
             offsite_ads=flag(row, "offsite_ads"),
+            etsy_ads=flag(row, "etsy_ads"),
+            country=col(row, "country", ""),
             vat_percent=float(col(row, "vat_percent", "0")),
             shopify_monthly_fee=float(col(row, "shopify_monthly_fee", "0")),
             shopify_monthly_orders=float(col(row, "shopify_monthly_orders", "0")),

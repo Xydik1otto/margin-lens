@@ -1,5 +1,6 @@
 """Tests for fee calculations against real, documented platform fee structures."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.fees import (  # noqa: E402
     AMAZON_REFERRAL,
+    ETSY,
     FeeInputs,
     amazon_fees,
     breakeven_price,
@@ -200,3 +202,91 @@ class TestWhatIfAndCsv:
 
     def test_csv_empty(self):
         assert parse_csv("") == []
+
+
+# ---------------------------------------------------------------------------
+# Alpha: Etsy Ads fee (12.5%) + regulatory operating fee (0.32%)
+# ---------------------------------------------------------------------------
+
+class TestEtsyAdsAndRegulatory:
+    def test_etsy_ads_fee_12_5pct(self):
+        fees = etsy_fees(m(etsy_ads=True))
+        assert fees["etsy_ads"] == pytest.approx(0.125 * 35)  # 4.375
+
+    def test_etsy_ads_excluded_by_default(self):
+        assert "etsy_ads" not in etsy_fees(m())
+
+    def test_regulatory_fee_for_supported_countries(self):
+        for c in ("GB", "UK", "FR", "IT", "ES"):
+            fees = etsy_fees(m(country=c))
+            assert fees["regulatory"] == pytest.approx(0.0032 * 35), c
+
+    def test_regulatory_fee_absent_without_country(self):
+        assert "regulatory" not in etsy_fees(m())
+        assert "regulatory" not in etsy_fees(m(country="us"))
+        assert "regulatory" not in etsy_fees(m(country="de"))
+
+    def test_regulatory_country_is_case_insensitive(self):
+        fees = etsy_fees(m(country="fr"))
+        assert fees["regulatory"] == pytest.approx(0.0032 * 35)
+
+    def test_full_stack_with_ads_and_regulatory(self):
+        r = calculate(m(etsy_ads=True, country="GB"))
+        # fees: 0.20 + 2.275 + 1.30 + 4.375 + 0.112 = 8.262
+        assert r.total_fees == pytest.approx(0.20 + 2.275 + 1.30 + 4.375 + 0.112, abs=0.01)
+        assert r.net_profit == pytest.approx(35 - 8.262 - 8 - 4, abs=0.01)
+
+    def test_breakeven_with_ads_and_regulatory(self):
+        # pct_total = 0.065 + 0.03 + 0.125 + 0.0032 = 0.2232; denom = 0.7768
+        # need = 12.45 -> total = 16.0275; price = 11.0275 -> 11.03
+        assert breakeven_price(m(etsy_ads=True, country="UK")) == pytest.approx(11.03, abs=0.01)
+
+    def test_csv_new_columns(self):
+        rows = parse_csv(
+            "platform,price,product_cost,shipping_paid,shipping_charged,etsy_ads,country\n"
+            "etsy,30,8,4,5,true,FR\n"
+            "etsy,30,8,4,5,false,\n"
+        )
+        assert etsy_fees(rows[0])["regulatory"] == pytest.approx(0.112)
+        assert etsy_fees(rows[0])["etsy_ads"] == pytest.approx(4.375)
+        assert "regulatory" not in etsy_fees(rows[1])
+
+
+# ---------------------------------------------------------------------------
+# Alpha: generated JS constants must match the Python source of truth
+# ---------------------------------------------------------------------------
+
+class TestGeneratedJsSync:
+    def test_generated_payload_matches_python(self):
+        import generate_js
+        payload = generate_js.PAYLOAD
+        assert payload["ETSY"] == {
+            "listing": ETSY["listing_fee"],
+            "transaction": ETSY["transaction_pct"],
+            "payPct": ETSY["payment_pct"],
+            "payFixed": ETSY["payment_fixed"],
+            "offsiteAds": ETSY["offsite_ads_pct"],
+            "ads": ETSY["ads_pct"],
+            "regulatory": ETSY["regulatory_pct"],
+        }
+        assert payload["AMAZON_REFERRAL"] == AMAZON_REFERRAL
+        assert payload["AMAZON_PER_ITEM"] == 0.99
+        assert payload["SHOPIFY"] == {"payPct": 0.029, "payFixed": 0.30}
+        assert set(payload["REGULATORY_COUNTRIES"]) == {"GB", "UK", "FR", "IT", "ES"}
+
+    def test_committed_generated_file_is_fresh(self):
+        """The committed core/fees.generated.js must equal a fresh generation."""
+        import generate_js
+        committed = Path(generate_js.__file__).parent.joinpath(
+            "core", "fees.generated.js").read_text(encoding="utf-8")
+        assert committed == generate_js.build_js(), (
+            "core/fees.generated.js is stale — run: python generate_js.py"
+        )
+
+    def test_generated_file_is_valid_js_object(self):
+        import generate_js
+        text = Path(generate_js.__file__).parent.joinpath(
+            "core", "fees.generated.js").read_text(encoding="utf-8")
+        payload = json.loads(text.split("window.ML_FEES = ", 1)[1].rstrip(";\n"))
+        assert payload["ETSY"]["ads"] == ETSY["ads_pct"]
+        assert payload["ETSY"]["regulatory"] == ETSY["regulatory_pct"]

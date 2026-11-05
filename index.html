@@ -78,6 +78,17 @@
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <input id="offsite" type="checkbox" style="width:auto" onchange="render()"> Offsite Ads (15%)
       </label>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <input id="etsyAds" type="checkbox" style="width:auto" onchange="render()"> Etsy Ads (12.5%)
+      </label>
+      <label>Країна продавця (regulatory fee 0.32%)</label>
+      <select id="country" onchange="render()">
+        <option value="">— інша (без збору) —</option>
+        <option value="GB">UK (GB)</option>
+        <option value="FR">Франція (FR)</option>
+        <option value="IT">Італія (IT)</option>
+        <option value="ES">Іспанія (ES)</option>
+      </select>
     </div>
     <div id="shopifyOpts" class="hidden">
       <div class="row">
@@ -101,6 +112,10 @@
     <input id="raiseSlider" type="range" min="0" max="50" step="1" value="0" oninput="render()">
     <div id="whatif" class="muted" style="margin-top:4px"></div>
     <button style="margin-top:12px" onclick="saveScenario()">💾 Зберегти сценарій</button>
+    <button class="secondary" style="margin-top:12px" onclick="exportScenarioCsv()">⬇ CSV сценарію</button>
+    <button class="secondary" style="margin-top:12px" onclick="exportCompareCsv()">⬇ CSV порівняння</button>
+    <button class="secondary" style="margin-top:12px" onclick="shareUrl()">🔗 Поділитись лінком</button>
+    <div id="shareMsg" class="muted" style="margin-top:6px"></div>
   </div>
 </div>
 </div>
@@ -109,7 +124,7 @@
 <div id="panel-batch" class="hidden">
   <div class="card">
     <h2>Batch-режим: вставте CSV</h2>
-    <p class="muted">Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, vat_percent, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]</p>
+    <p class="muted">Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, etsy_ads, country, vat_percent, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]</p>
     <textarea id="csv" rows="6" spellcheck="false">name,platform,price,product_cost,shipping_paid,shipping_charged,offsite_ads,vat_percent
 mug,etsy,30,8,4,5,true,0
 tshirt,shopify,25,10,3,0,false,0
@@ -137,13 +152,11 @@ speaker,amazon,60,25,6,0,false,0</textarea>
   </div>
 </div>
 
+<script src="core/fees.generated.js"></script>
 <script>
 "use strict";
-// Fee structures — mirror of core/fees.py (tested by pytest)
-const ETSY = { listing:0.20, transaction:0.065, payPct:0.03, payFixed:0.25, offsiteAds:0.15 };
-const SHOPIFY = { payPct:0.029, payFixed:0.30 };
-const AMAZON_REFERRAL = { default:0.15, electronics:0.08, home_kitchen:0.15, clothing:0.17, books:0.15, toys_games:0.15, beauty:0.08, grocery:0.18, jewelry:0.20, furniture:0.15 };
-const AMAZON_PER_ITEM = 0.99;
+// Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 const $ = id => document.getElementById(id);
@@ -161,6 +174,8 @@ function readInputs() {
     price: num("price"), product_cost: num("cost"),
     shipping_paid: num("shipPaid"), shipping_charged: num("shipCharged"),
     offsite_ads: $("offsite").checked,
+    etsy_ads: $("etsyAds").checked,
+    country: $("country").value,
     vat_percent: num("vat"),
     shopify_monthly_fee: num("monthlyFee"), shopify_monthly_orders: num("monthlyOrders"),
     amazon_category: $("amazonCat").value,
@@ -177,6 +192,8 @@ function feesFor(inp) {
     fees["Transaction 6.5%"] = ETSY.transaction * base;
     fees["Payment 3% + $0.25"] = ETSY.payPct * base + ETSY.payFixed;
     if (inp.offsite_ads) fees["Offsite Ads 15%"] = ETSY.offsiteAds * base;
+    if (inp.etsy_ads) fees["Etsy Ads 12.5%"] = ETSY.ads * base;
+    if (REGULATORY_COUNTRIES.includes(inp.country)) fees["Regulatory fee 0.32%"] = ETSY.regulatory * base;
   } else if (inp.platform === "shopify") {
     fees["Payment 2.9% + $0.30"] = SHOPIFY.payPct * base + SHOPIFY.payFixed;
     if (inp.shopify_monthly_fee > 0 && inp.shopify_monthly_orders > 0)
@@ -191,7 +208,7 @@ function feesFor(inp) {
 
 function pctTotal(inp) {
   let p = 0;
-  if (inp.platform === "etsy") { p = ETSY.transaction + ETSY.payPct + (inp.offsite_ads ? ETSY.offsiteAds : 0); }
+  if (inp.platform === "etsy") { p = ETSY.transaction + ETSY.payPct + (inp.offsite_ads ? ETSY.offsiteAds : 0) + (inp.etsy_ads ? ETSY.ads : 0) + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0); }
   else if (inp.platform === "shopify") { p = SHOPIFY.payPct; }
   else if (inp.platform === "amazon") { p = AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default; }
   return p + inp.vat_percent / 100;
@@ -317,16 +334,122 @@ function saveScenario() {
   localStorage.setItem("ml_scenarios", JSON.stringify(all));
 }
 
+// ------------------------------------------------------------------
+// CSV export (scenario + channel comparison)
+// ------------------------------------------------------------------
+
+function csvCell(v) {
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function downloadCsv(filename, rows) {
+  const text = rows.map(r => r.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportScenarioCsv() {
+  const inp = readInputs();
+  const r = calculate(inp);
+  const rows = [
+    ["metric", "value"],
+    ["platform", inp.platform],
+    ["price", inp.price.toFixed(2)],
+    ["revenue", r.revenue.toFixed(2)],
+    ...Object.entries(r.fees).map(([k, v]) => [k, v.toFixed(2)]),
+    ["total_fees", r.totalFees.toFixed(2)],
+    ["vat", r.vat.toFixed(2)],
+    ["product_cost", inp.product_cost.toFixed(2)],
+    ["shipping_paid", inp.shipping_paid.toFixed(2)],
+    ["net_profit", r.net.toFixed(2)],
+    ["margin_pct", r.margin.toFixed(2)],
+    ["breakeven_price", r.breakeven === null ? "" : r.breakeven.toFixed(2)],
+  ];
+  downloadCsv("margin-lens-scenario.csv", rows);
+}
+
+function exportCompareCsv() {
+  const inp = readInputs();
+  const rows = [["channel", "fees", "vat", "net", "margin_pct", "breakeven"]];
+  for (const p of ["etsy", "shopify", "amazon"]) {
+    const r = calculate({ ...inp, platform: p });
+    rows.push([p, r.totalFees.toFixed(2), r.vat.toFixed(2), r.net.toFixed(2),
+               r.margin.toFixed(2), r.breakeven === null ? "" : r.breakeven.toFixed(2)]);
+  }
+  downloadCsv("margin-lens-compare.csv", rows);
+}
+
+// ------------------------------------------------------------------
+// URL share: scenario params -> #p=<base64url(json)> ; link restores it
+// ------------------------------------------------------------------
+
+function encodeShare(inp) {
+  const json = JSON.stringify(inp);
+  const bytes = new TextEncoder().encode(json);
+  let bin = "";
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeShare(s) {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64 + "=".repeat((4 - b64.length % 4) % 4));
+  const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function shareUrl() {
+  const hash = "#p=" + encodeShare(readInputs());
+  const url = location.origin === "null" || location.protocol === "file:"
+    ? location.pathname + hash
+    : location.origin + location.pathname + hash;
+  const msg = $("shareMsg");
+  const show = t => { msg.textContent = t; setTimeout(() => { msg.textContent = ""; }, 4000); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => show("✓ Лінк скопійовано в буфер"), () => show(url));
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); show("✓ Лінк скопійовано в буфер"); }
+    catch (e) { show(url); }
+    ta.remove();
+  }
+  history.replaceState(null, "", hash);
+}
+
+function applyShareFromUrl() {
+  const m = location.hash.match(/^#p=([A-Za-z0-9\-_]+)$/);
+  if (!m) return false;
+  try {
+    const inp = decodeShare(m[1]);
+    applyInputs(inp);
+    return true;
+  } catch (e) { return false; }
+}
+
+function applyInputs(inp) {
+  $("platform").value = inp.platform || "etsy";
+  $("price").value = inp.price ?? 0; $("cost").value = inp.product_cost ?? 0;
+  $("shipPaid").value = inp.shipping_paid ?? 0; $("shipCharged").value = inp.shipping_charged ?? 0;
+  $("vat").value = inp.vat_percent ?? 0; $("units").value = inp.units ?? 1;
+  $("offsite").checked = !!inp.offsite_ads;
+  $("etsyAds").checked = !!inp.etsy_ads;
+  $("country").value = inp.country || "";
+  $("monthlyFee").value = inp.shopify_monthly_fee ?? 0;
+  $("monthlyOrders").value = inp.shopify_monthly_orders ?? 0;
+  $("amazonCat").value = inp.amazon_category || "default";
+  $("perItemFee").checked = !!inp.amazon_per_item_fee;
+}
+
 function loadScenario(i) {
   const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
   const s = all[i]; if (!s) return;
-  $("platform").value = s.inp.platform;
-  $("price").value = s.inp.price; $("cost").value = s.inp.product_cost;
-  $("shipPaid").value = s.inp.shipping_paid; $("shipCharged").value = s.inp.shipping_charged;
-  $("vat").value = s.inp.vat_percent; $("units").value = s.inp.units;
-  $("offsite").checked = !!s.inp.offsite_ads;
-  $("monthlyFee").value = s.inp.shopify_monthly_fee; $("monthlyOrders").value = s.inp.shopify_monthly_orders;
-  $("amazonCat").value = s.inp.amazon_category; $("perItemFee").checked = !!s.inp.amazon_per_item_fee;
+  applyInputs(s.inp);
   showTab("calc"); render();
 }
 
@@ -346,6 +469,7 @@ function delScenario(i) {
 const _showTab = showTab;
 showTab = name => { _showTab(name); if (name === "compare") renderCompare(); };
 
+applyShareFromUrl();  // restore shared scenario from #p=... before first render
 render();
 </script>
 </body>
