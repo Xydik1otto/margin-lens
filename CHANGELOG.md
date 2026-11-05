@@ -5,6 +5,48 @@
 Формат базується на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 версіонування — [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-11-05
+
+### Added
+- **Depop**: flat 10% від загальної суми продажу (товар + доставка покупця).
+- **Poshmark**: комісія з ціни товару — $2.95 flat за товар < $15, 20% за $15+
+  (breakeven розв'язується аналітично по обох тарифних рівнях — комісія має
+  стрибок на межі $15).
+- **Etsy regional variations**: payment processing залежить від країни продавця
+  (`ETSY_REGIONAL`: US/GB/DE/FR/IT/ES/CA/AU — 3–4.5% + локальний fixed fee,
+  UK = GB alias; невідома країна → базова ставка 3% + $0.25).
+- **Batch-історія з трендом маржі** (`core/history.py`): прогони batch
+  зберігаються в IndexedDB (store `batches`, fallback localStorage), список
+  прогонів з видаленням, SVG-sparkline тренду середньої маржі
+  (delta у п.п., up/down/flat).
+- **Duplicate detection** (`core/dedupe.py`): однаковий товар (нормалізована
+  назва: регістр/розділові знаки ігноруються, кирилиця підтримується)
+  на кількох платформах групується; кнопка «⚖ Порівняти» — 1 клік переносить
+  товар у вкладку «Порівняння каналів».
+- **Copy as Markdown** (`core/md_export.py`): результати batch і порівняння
+  каналів як GFM-таблиця в буфер обміну (escapes `|`, clipboard + fallback).
+- **i18n UA/EN**: перемикач у шапці, JSON-словники, авто-детект
+  `navigator.language`, збереження вибору (`ml_lang`), динамічні таблиці через
+  `t()`, мова Markdown-експорту слідує UI. Російської локалізації немає
+  (політичне рішення; закріплено тестами).
+- **README.en.md** — англійський дзеркальний README для міжнародної аудиторії.
+- **INSTALL.md** — покрокова інструкція для не-програміста: GitHub Pages
+  (primary), локальний файл, автозапуск (Windows Startup / systemd user unit),
+  оновлення, приватність.
+- **A11y**: `:focus-visible` на всіх інтерактивних елементах, scenario-рядки
+  як `role="button"` + `tabindex` з Enter/Space, aria-label на icon-кнопках,
+  `aria-live` на асинхронних результатах.
+- **OSS hygiene**: `CONTRIBUTING.md` (оновлення тарифів платформ — задокументований
+  найчастіший зовнішній PR), issue-шаблони bug/feature (укр+eng), `SECURITY.md`,
+  GitHub topics в README, privacy-регресія `tests/test_privacy.py`
+  (шляхи/токени/персональні дані в repo відсутні), дати «last verified» біля
+  всіх тарифних констант.
+
+### Changed
+- Порівняння каналів і CSV-експорт розширені до 7 платформ (eBay, Vinted,
+  Depop, Poshmark + базові).
+- Тести: 103 → 210 (+1 skipped).
+
 ## [0.4.0] — 2026-11-05
 
 ### Added
