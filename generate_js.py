@@ -20,10 +20,12 @@ from core.fx import FALLBACK_RATES, SYMBOLS
 from core.fees import (
     AMAZON_PER_ITEM_FEE,
     AMAZON_REFERRAL,
+    EBAY,
     ETSY,
     ETSY_SHIPPING_PRESETS,
     REGULATORY_COUNTRIES,
     SHOPIFY,
+    VINTED,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -40,6 +42,8 @@ PAYLOAD = {
         "regulatory": ETSY["regulatory_pct"],
     },
     "SHOPIFY": {"payPct": SHOPIFY["payment_pct"], "payFixed": SHOPIFY["payment_fixed"]},
+    "EBAY": {"finalValuePct": EBAY["final_value_pct"], "perOrder": EBAY["per_order_fixed"]},
+    "VINTED": {"sellerPct": VINTED["seller_pct"]},
     "AMAZON_REFERRAL": AMAZON_REFERRAL,
     "AMAZON_PER_ITEM": AMAZON_PER_ITEM_FEE,
     "REGULATORY_COUNTRIES": sorted(REGULATORY_COUNTRIES),

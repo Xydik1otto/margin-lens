@@ -156,7 +156,7 @@ class TestComparisonAndEdges:
 
     def test_unknown_platform_raises(self):
         with pytest.raises(ValueError):
-            calculate(m(platform="ebay"))
+            calculate(m(platform="mercari"))
 
     def test_negative_inputs_clamped(self):
         r = calculate(m(price=-5, product_cost=-1, shipping_paid=-2, shipping_charged=-3))

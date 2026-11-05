@@ -15,6 +15,13 @@ window.ML_FEES = {
     "payPct": 0.029,
     "payFixed": 0.3
   },
+  "EBAY": {
+    "finalValuePct": 0.1325,
+    "perOrder": 0.4
+  },
+  "VINTED": {
+    "sellerPct": 0.0
+  },
   "AMAZON_REFERRAL": {
     "default": 0.15,
     "electronics": 0.08,

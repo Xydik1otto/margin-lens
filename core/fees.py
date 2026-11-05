@@ -67,10 +67,24 @@ AMAZON_REFERRAL = {
 }
 AMAZON_PER_ITEM_FEE = 0.99  # individual (non-pro) selling plan
 
+# eBay: final value fee (~13.25% for most categories on the standard tier)
+# plus a fixed $0.40 per-order fee. Category-specific rates exist (lower for
+# some categories, higher add-ons for international buyers) — the standard
+# tier below covers the typical case.
+EBAY = {
+    "final_value_pct": 0.1325,
+    "per_order_fixed": 0.40,     # per order, regardless of item count
+}
+
+# Vinted: no seller fees at all. The buyer protection fee (+ shipping) is
+# paid by the buyer, so the seller's fee stack is empty. If a seller offers
+# a shipping discount, it is modeled via shipping_paid > 0.
+VINTED = {"seller_pct": 0.0}
+
 
 @dataclass
 class FeeInputs:
-    platform: str                 # "etsy" | "shopify" | "amazon"
+    platform: str                 # "etsy" | "shopify" | "amazon" | "ebay" | "vinted"
     price: float                  # item sale price
     product_cost: float           # COGS per unit
     shipping_paid: float          # what YOU pay for shipping
@@ -176,10 +190,23 @@ def amazon_fees(inp: FeeInputs) -> dict:
     return fees
 
 
+def ebay_fees(inp: FeeInputs) -> dict:
+    base = inp.price + inp.shipping_charged
+    fees = {"final_value": round(EBAY["final_value_pct"] * base, 4)}
+    fees["per_order"] = round(fixed_in_currency(EBAY["per_order_fixed"], inp.currency), 4)
+    return fees
+
+
+def vinted_fees(inp: FeeInputs) -> dict:
+    return {}  # 0% seller fee; buyer protection is paid by the buyer
+
+
 _PLATFORM_FEE_FN = {
     "etsy": etsy_fees,
     "shopify": shopify_fees,
     "amazon": amazon_fees,
+    "ebay": ebay_fees,
+    "vinted": vinted_fees,
 }
 
 
@@ -187,10 +214,9 @@ _PLATFORM_FEE_FN = {
 # Core calculation
 # ---------------------------------------------------------------------------
 
-def _pct_total(inp: FeeInputs) -> float:
-    """Sum of percentage fees applied to revenue (used by breakeven solver)."""
+def _platform_pct_list(inp: FeeInputs) -> list[float]:
+    """Percentage fee components for the platform (without VAT)."""
     p = inp.platform
-    parts = []
     if p == "etsy":
         parts = [ETSY["transaction_pct"], ETSY["payment_pct"]]
         if inp.offsite_ads:
@@ -203,8 +229,18 @@ def _pct_total(inp: FeeInputs) -> float:
         parts = [SHOPIFY["payment_pct"]]
     elif p == "amazon":
         parts = [AMAZON_REFERRAL.get(inp.amazon_category.lower(), AMAZON_REFERRAL["default"])]
+    elif p == "ebay":
+        parts = [EBAY["final_value_pct"]]
+    elif p == "vinted":
+        parts = []
     else:
         raise ValueError(f"unknown platform: {inp.platform!r}")
+    return parts
+
+
+def _pct_total(inp: FeeInputs) -> float:
+    """Sum of percentage fees applied to revenue (used by breakeven solver)."""
+    parts = _platform_pct_list(inp)
     if inp.vat_percent:
         parts.append(inp.vat_percent / 100.0)
     return sum(parts)
@@ -223,6 +259,10 @@ def _fixed_fees(inp: FeeInputs) -> float:
     elif p == "amazon":
         fixed = round(fixed_in_currency(AMAZON_PER_ITEM_FEE, inp.currency) * inp.units, 4) \
             if inp.amazon_per_item_fee else 0.0
+    elif p == "ebay":
+        fixed = round(fixed_in_currency(EBAY["per_order_fixed"], inp.currency), 4)
+    elif p == "vinted":
+        fixed = 0.0
     else:
         raise ValueError(f"unknown platform: {inp.platform!r}")
     return fixed
@@ -298,14 +338,7 @@ def ad_profit(inp: FeeInputs, ad_spend: float, ad_orders: float) -> dict:
     ad_spend = max(0.0, ad_spend)
     ad_orders = max(0.0, ad_orders)
     revenue = inp.price + inp.shipping_charged
-    pct = [ETSY["transaction_pct"], ETSY["payment_pct"]]
-    if inp.country in REGULATORY_COUNTRIES:
-        pct.append(ETSY["regulatory_pct"])
-    if inp.platform == "shopify":
-        pct = [SHOPIFY["payment_pct"]]
-    elif inp.platform == "amazon":
-        pct = [AMAZON_REFERRAL.get(inp.amazon_category.lower(), AMAZON_REFERRAL["default"])]
-    pct_total = sum(pct)
+    pct_total = sum(_platform_pct_list(inp))
     fixed = _fixed_fees(inp)
     contribution = revenue * (1 - pct_total) - fixed - revenue * inp.vat_percent / 100.0 \
         - inp.product_cost - inp.shipping_paid

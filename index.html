@@ -64,6 +64,8 @@
           <option value="etsy">Etsy</option>
           <option value="shopify">Shopify</option>
           <option value="amazon">Amazon</option>
+          <option value="ebay">eBay</option>
+          <option value="vinted">Vinted</option>
         </select>
       </div>
       <div>
@@ -121,6 +123,12 @@
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <input id="perItemFee" type="checkbox" style="width:auto" onchange="render()"> Індивідуальний план ($0.99/товар)
       </label>
+    </div>
+    <div id="ebayOpts" class="hidden">
+      <p class="muted">eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.</p>
+    </div>
+    <div id="vintedOpts" class="hidden">
+      <p class="muted">Vinted: комісія продавця 0%. Buyer protection оплачує покупець. Доставка — покупець (або з вашого гаманця, якщо ви даєте знижку на доставку — введіть її як «ви платите»).</p>
     </div>
   </div>
   <div class="card">
@@ -192,7 +200,7 @@ speaker,amazon,60,25,6,0,false,0</textarea>
 <script>
 "use strict";
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
-const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, FX, SHIP_PRESETS } = window.ML_FEES;
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, EBAY, VINTED, FX, SHIP_PRESETS } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 const $ = id => document.getElementById(id);
@@ -295,6 +303,11 @@ function feesFor(inp) {
     const pct = AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default;
     fees["Referral " + (pct * 100).toFixed(0) + "%"] = pct * base;
     if (inp.amazon_per_item_fee) fees["Per-item $0.99"] = fixedCur(AMAZON_PER_ITEM, inp.currency) * inp.units;
+  } else if (inp.platform === "ebay") {
+    fees["Final value 13.25%"] = EBAY.finalValuePct * base;
+    fees["Per-order $0.40"] = fixedCur(EBAY.perOrder, inp.currency);
+  } else if (inp.platform === "vinted") {
+    // 0% seller fee; buyer protection оплачує покупець — зборів продавця немає
   } else throw new Error("unknown platform");
   return fees;
 }
@@ -304,6 +317,8 @@ function pctTotal(inp) {
   if (inp.platform === "etsy") { p = ETSY.transaction + ETSY.payPct + (inp.offsite_ads ? ETSY.offsiteAds : 0) + (inp.etsy_ads ? ETSY.ads : 0) + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0); }
   else if (inp.platform === "shopify") { p = SHOPIFY.payPct; }
   else if (inp.platform === "amazon") { p = AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default; }
+  else if (inp.platform === "ebay") { p = EBAY.finalValuePct; }
+  else if (inp.platform === "vinted") { p = 0; }
   return p + inp.vat_percent / 100;
 }
 
@@ -318,10 +333,15 @@ function fixedFees(inp) {
   return inp.platform === "amazon" && inp.amazon_per_item_fee ? fixedCur(AMAZON_PER_ITEM, inp.currency) * inp.units : 0;
 }
 
+function platformFixedExtra(inp) {
+  if (inp.platform === "ebay") return fixedCur(EBAY.perOrder, inp.currency);
+  return 0;
+}
+
 function breakeven(inp) {
   const denom = 1 - pctTotal(inp);
   if (denom <= 1e-9) return null;
-  const need = inp.product_cost + inp.shipping_paid + fixedFees(inp);
+  const need = inp.product_cost + inp.shipping_paid + fixedFees(inp) + platformFixedExtra(inp);
   return Math.max(0, need / denom - inp.shipping_charged);
 }
 
@@ -366,8 +386,10 @@ function adProfit(inp, adSpend, adOrders) {
   if (inp.platform === "etsy") {
     pct = ETSY.transaction + ETSY.payPct + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0);
   } else if (inp.platform === "shopify") pct = SHOPIFY.payPct;
+  else if (inp.platform === "ebay") pct = EBAY.finalValuePct;
+  else if (inp.platform === "vinted") pct = 0;
   else pct = (AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default);
-  const fixed = fixedFees(inp);
+  const fixed = fixedFees(inp) + platformFixedExtra(inp);
   const contribution = revenue * (1 - pct) - fixed - revenue * (inp.vat_percent || 0) / 100
     - inp.product_cost - inp.shipping_paid;
   const totalRevenue = adOrders * revenue;
@@ -407,9 +429,12 @@ function renderAds() {
 }
 
 function render() {
-  $("etsyOpts").classList.toggle("hidden", $("platform").value !== "etsy");
-  $("shopifyOpts").classList.toggle("hidden", $("platform").value !== "shopify");
-  $("amazonOpts").classList.toggle("hidden", $("platform").value !== "amazon");
+  const plat = $("platform").value;
+  $("etsyOpts").classList.toggle("hidden", plat !== "etsy");
+  $("shopifyOpts").classList.toggle("hidden", plat !== "shopify");
+  $("amazonOpts").classList.toggle("hidden", plat !== "amazon");
+  $("ebayOpts").classList.toggle("hidden", plat !== "ebay");
+  $("vintedOpts").classList.toggle("hidden", plat !== "vinted");
 
   const inp = readInputs();
   const r = calculate(inp);
@@ -478,7 +503,8 @@ function runBatch() {
 
 function renderCompare() {
   const inp = readInputs();
-  const html = ["etsy", "shopify", "amazon"].map(p => {
+  const platforms = ["etsy", "shopify", "amazon", "ebay", "vinted"];
+  const html = platforms.map(p => {
     const r = calculate({ ...inp, platform: p });
     return `<tr><td>${p}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
   }).join("");
@@ -698,7 +724,7 @@ function exportScenarioCsv() {
 function exportCompareCsv() {
   const inp = readInputs();
   const rows = [["channel", "fees", "vat", "net", "margin_pct", "breakeven"]];
-  for (const p of ["etsy", "shopify", "amazon"]) {
+  for (const p of ["etsy", "shopify", "amazon", "ebay", "vinted"]) {
     const r = calculate({ ...inp, platform: p });
     rows.push([p, r.totalFees.toFixed(2), r.vat.toFixed(2), r.net.toFixed(2),
                r.margin.toFixed(2), r.breakeven === null ? "" : r.breakeven.toFixed(2)]);
