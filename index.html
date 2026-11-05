@@ -29,6 +29,11 @@
   button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:9px 16px; font-size:.9rem; cursor:pointer; }
   button.secondary { background:var(--border); }
   button:hover { filter:brightness(1.1); }
+  /* A11y: visible focus for keyboard navigation on ALL interactive elements */
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline:2px solid var(--accent); outline-offset:2px;
+  }
   .metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px; }
   .metric { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px; }
   .metric .v { font-size:1.3rem; font-weight:700; }
@@ -194,12 +199,12 @@
   <div class="card">
     <h2>Batch-режим: вставте CSV</h2>
     <p class="muted">Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, etsy_ads, country, vat_percent, return_rate_pct, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]</p>
-    <textarea id="csv" rows="6" spellcheck="false">name,platform,price,product_cost,shipping_paid,shipping_charged,offsite_ads,vat_percent
+    <textarea id="csv" rows="6" spellcheck="false" aria-label="CSV: список товарів для batch-розрахунку">name,platform,price,product_cost,shipping_paid,shipping_charged,offsite_ads,vat_percent
 mug,etsy,30,8,4,5,true,0
 tshirt,shopify,25,10,3,0,false,0
 speaker,amazon,60,25,6,0,false,0</textarea>
-    <button style="margin-top:10px" onclick="runBatch()">Розрахувати</button>
-    <div id="batchOut"></div>
+    <button style="margin-top:10px" onclick="runBatch()" aria-label="Розрахувати batch CSV">Розрахувати</button>
+    <div id="batchOut" aria-live="polite"></div>
     <div id="batchDupOut"></div>
     <div id="batchHistoryOut"></div>
   </div>
@@ -1143,7 +1148,7 @@ async function renderScenarios() {
   const all = await getScenarios();
   if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>" + t("Поки порожньо. Збережіть сценарій у калькуляторі.") + "</p>"; return; }
   $("scenariosList").innerHTML = all.map((s, i) =>
-    `<div class="scenario" onclick="loadScenario(${i})"><span>${escapeHtml(s.name)} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><span><button class="secondary btn-sm" title="Перейменувати" aria-label="Перейменувати сценарій" onclick="event.stopPropagation();renameScenario(${i})">✎</button> <button class="secondary btn-sm" title="Видалити" aria-label="Видалити сценарій" onclick="event.stopPropagation();delScenario(${i})">✕</button></span></div>`).join("");
+    `<div class="scenario" role="button" tabindex="0" aria-label="Відкрити сценарій ${escapeHtml(s.name)}" onclick="loadScenario(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();loadScenario(${i});}"><span>${escapeHtml(s.name)} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><span><button class="secondary btn-sm" title="Перейменувати" aria-label="Перейменувати сценарій" onclick="event.stopPropagation();renameScenario(${i})">✎</button> <button class="secondary btn-sm" title="Видалити" aria-label="Видалити сценарій" onclick="event.stopPropagation();delScenario(${i})">✕</button></span></div>`).join("");
 }
 
 function escapeHtml(t) {
