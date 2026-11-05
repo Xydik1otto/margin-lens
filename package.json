@@ -1,0 +1,19 @@
+{
+  "name": "margin-lens",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Margin Lens — калькулятор зборів та маржі (офлайн SPA; Capacitor-оболонка для мобільних збірок)",
+  "scripts": {
+    "build": "node scripts/build-www.mjs",
+    "sync": "npm run build && cap sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/ios": "^7.4.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.4",
+    "typescript": "^7.0.2"
+  }
+}
