@@ -196,6 +196,7 @@ tshirt,shopify,25,10,3,0,false,0
 speaker,amazon,60,25,6,0,false,0</textarea>
     <button style="margin-top:10px" onclick="runBatch()">Розрахувати</button>
     <div id="batchOut"></div>
+    <div id="batchDupOut"></div>
     <div id="batchHistoryOut"></div>
   </div>
 </div>
@@ -582,7 +583,7 @@ function runBatch() {
       const name = row[idx("name")] || "—";
       batchRows.push({ name, platform: inp.platform, currency: inp.currency,
         revenue: +r.revenue.toFixed(2), fees: +(r.totalFees + r.vat).toFixed(2),
-        net: +r.net.toFixed(2), margin: +r.margin.toFixed(2) });
+        net: +r.net.toFixed(2), margin: +r.margin.toFixed(2), inp });
       html += `<tr><td>${escapeHtml(name)}</td><td>${inp.platform}</td><td>${money(r.revenue)}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
     } catch (e) { html += `<tr><td colspan="7" class="neg">Помилка: ${escapeHtml(e.message)}</td></tr>`; }
   }
@@ -590,6 +591,62 @@ function runBatch() {
     + (count ? `<button class="secondary btn-sm" style="margin-top:8px" onclick="saveBatchHistory()" aria-label="Зберегти цей прогін в історію">💾 Зберегти прогін в історію</button>` : "");
   _lastBatchRows = batchRows;
   renderBatchHistory();
+  renderDuplicates();
+}
+
+// ------------------------------------------------------------------
+// Duplicate detection: той самий товар на кількох платформах.
+// Джерело логіки: core/dedupe.py (normalize_name / find_duplicates).
+// «Порівняти» — 1 клік: підставляє рядок у калькулятор і відкриває
+// вкладку «Порівняння каналів» з усіма платформами.
+// ------------------------------------------------------------------
+
+const _DUP_WORD_RE = /[a-z0-9а-яїієґё]+/gi;
+function normalizeName(name, minLen = 3) {
+  // JS mirror of core.dedupe.normalize_name()
+  const words = String(name || "").toLowerCase().match(_DUP_WORD_RE) || [];
+  return words.filter(w => w.length >= minLen).join(" ");
+}
+
+function findDuplicateGroups(items) {
+  const groups = new Map();
+  for (const it of items) {
+    const key = normalizeName(it.name);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  const out = [...groups.values()].filter(g => g.length >= 2);
+  out.sort((a, b) => b.length - a.length);
+  return out;
+}
+
+function renderDuplicates() {
+  const el = $("batchDupOut");
+  if (!el) return;
+  const groups = findDuplicateGroups(_lastBatchRows);
+  if (!groups.length) {
+    el.innerHTML = "<p class='muted' style='margin-top:14px'>Дублікати між платформами не знайдено (порівнюються назви товарів: регістр/розділові знаки ігноруються).</p>";
+    return;
+  }
+  el.innerHTML = "<h2 style='margin-top:16px;font-size:1rem'>Схожі товари на кількох платформах</h2>" +
+    groups.map((g, gi) => {
+      const best = g.reduce((b, r) => ((r.net || 0) > (b.net || 0) ? r : b));
+      const spread = (Math.max(...g.map(r => r.net || 0)) - Math.min(...g.map(r => r.net || 0))).toFixed(2);
+      const rows = g.map((r, ri) =>
+        `<tr><td>${r.platform}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td>`
+        + `<td><button class="secondary btn-sm" onclick="compareDuplicate(${gi},${ri})" aria-label="Порівняти цей товар по всіх платформах">⚖ Порівняти</button></td></tr>`).join("");
+      return `<div style="margin-top:8px"><b>${escapeHtml(best.name)}</b> <span class="muted">— ${g.length} платформи, розкид net: $${spread}</span>`
+        + `<table><tr><th>Платформа</th><th>Net</th><th>Margin</th><th></th></tr>${rows}</table></div>`;
+    }).join("");
+}
+
+function compareDuplicate(gi, ri) {
+  const group = findDuplicateGroups(_lastBatchRows)[gi];
+  const row = group && group[ri];
+  if (!row || !row.inp) return;
+  applyInputs(row.inp);
+  showTab("compare");
 }
 
 // ------------------------------------------------------------------
