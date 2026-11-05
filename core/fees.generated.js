@@ -15,6 +15,40 @@ window.ML_FEES = {
     "payPct": 0.029,
     "payFixed": 0.3
   },
+  "ETSY_REGIONAL": {
+    "US": {
+      "payment_pct": 0.03,
+      "payment_fixed_usd": 0.25
+    },
+    "GB": {
+      "payment_pct": 0.04,
+      "payment_fixed_usd": 0.24
+    },
+    "DE": {
+      "payment_pct": 0.04,
+      "payment_fixed_usd": 0.33
+    },
+    "FR": {
+      "payment_pct": 0.04,
+      "payment_fixed_usd": 0.33
+    },
+    "IT": {
+      "payment_pct": 0.045,
+      "payment_fixed_usd": 0.33
+    },
+    "ES": {
+      "payment_pct": 0.045,
+      "payment_fixed_usd": 0.33
+    },
+    "CA": {
+      "payment_pct": 0.03,
+      "payment_fixed_usd": 0.18
+    },
+    "AU": {
+      "payment_pct": 0.04,
+      "payment_fixed_usd": 0.2
+    }
+  },
   "EBAY": {
     "finalValuePct": 0.1325,
     "perOrder": 0.4

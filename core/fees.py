@@ -36,6 +36,38 @@ ETSY = {
 # Countries where Etsy charges the 0.32% regulatory operating fee.
 REGULATORY_COUNTRIES = {"GB", "UK", "FR", "IT", "ES"}
 
+# Etsy payment processing varies by the seller's country of residence
+# (domestic rate, 2025). The fixed part is quoted in the seller's local
+# currency; we store USD approximations and convert with fixed_in_currency().
+# A seller outside this table pays the default rate (ETSY["payment_pct"] /
+# ETSY["payment_fixed"] = 3% + $0.25, the US rate).
+ETSY_REGIONAL = {
+    "US": {"payment_pct": 0.03,  "payment_fixed_usd": 0.25},
+    "GB": {"payment_pct": 0.04,  "payment_fixed_usd": 0.24},  # £0.20
+    "DE": {"payment_pct": 0.04,  "payment_fixed_usd": 0.33},  # €0.30
+    "FR": {"payment_pct": 0.04,  "payment_fixed_usd": 0.33},  # €0.30
+    "IT": {"payment_pct": 0.045, "payment_fixed_usd": 0.33},  # €0.30
+    "ES": {"payment_pct": 0.045, "payment_fixed_usd": 0.33},  # €0.30
+    "CA": {"payment_pct": 0.03,  "payment_fixed_usd": 0.18},  # CA$0.25
+    "AU": {"payment_pct": 0.04,  "payment_fixed_usd": 0.20},  # AU$0.30
+}
+
+
+def etsy_payment_terms(country: str) -> tuple[float, float]:
+    """(payment_pct, payment_fixed_usd) for the seller's country.
+
+    Unknown/empty country codes fall back to the US default rate. "UK" is
+    accepted as an alias for "GB" (both spellings appear in Etsy docs).
+    """
+    c = (country or "").strip().upper()
+    if c == "UK":
+        c = "GB"
+    if c in ETSY_REGIONAL:
+        r = ETSY_REGIONAL[c]
+        return r["payment_pct"], r["payment_fixed_usd"]
+    return ETSY["payment_pct"], ETSY["payment_fixed"]
+
+
 # Typical Etsy shipping rates by region (small parcel, USD), 2025.
 # Used as one-click presets: what the seller pays vs what the customer pays.
 ETSY_SHIPPING_PRESETS = {
@@ -165,11 +197,12 @@ def shipping_margin(inp: FeeInputs) -> float:
 
 def etsy_fees(inp: FeeInputs) -> dict:
     country = inp.country.strip().upper()
+    pay_pct, pay_fixed_usd = etsy_payment_terms(country)
     fees = {"listing": round(fixed_in_currency(ETSY["listing_fee"], inp.currency) * inp.units, 4)}
     base = inp.price + inp.shipping_charged
     fees["transaction"] = round(ETSY["transaction_pct"] * base, 4)
     fees["payment_processing"] = round(
-        ETSY["payment_pct"] * base + fixed_in_currency(ETSY["payment_fixed"], inp.currency), 4)
+        pay_pct * base + fixed_in_currency(pay_fixed_usd, inp.currency), 4)
     if inp.offsite_ads:
         fees["offsite_ads"] = round(ETSY["offsite_ads_pct"] * base, 4)
     if inp.etsy_ads:
@@ -248,7 +281,8 @@ def _platform_pct_list(inp: FeeInputs) -> list[float]:
     """Percentage fee components for the platform (without VAT)."""
     p = inp.platform
     if p == "etsy":
-        parts = [ETSY["transaction_pct"], ETSY["payment_pct"]]
+        pay_pct, _ = etsy_payment_terms(inp.country)
+        parts = [ETSY["transaction_pct"], pay_pct]
         if inp.offsite_ads:
             parts.append(ETSY["offsite_ads_pct"])
         if inp.etsy_ads:
@@ -286,8 +320,9 @@ def _fixed_fees(inp: FeeInputs) -> float:
     """Fixed (per-order) fee components independent of price."""
     p = inp.platform
     if p == "etsy":
+        _, pay_fixed_usd = etsy_payment_terms(inp.country)
         fixed = fixed_in_currency(ETSY["listing_fee"], inp.currency) * inp.units \
-            + fixed_in_currency(ETSY["payment_fixed"], inp.currency)
+            + fixed_in_currency(pay_fixed_usd, inp.currency)
     elif p == "shopify":
         fixed = fixed_in_currency(SHOPIFY["payment_fixed"], inp.currency)
         if inp.shopify_monthly_fee > 0 and inp.shopify_monthly_orders > 0:

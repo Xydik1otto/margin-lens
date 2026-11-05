@@ -130,13 +130,17 @@
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <input id="etsyAds" type="checkbox" style="width:auto" onchange="render()"> Etsy Ads (12.5%)
       </label>
-      <label>Країна продавця (regulatory fee 0.32%)</label>
+      <label>Країна продавця (payment processing + regulatory fee)</label>
       <select id="country" onchange="render()">
-        <option value="">— інша (без збору) —</option>
+        <option value="">— інша (базова ставка 3% + $0.25) —</option>
+        <option value="US">США (US)</option>
         <option value="GB">UK (GB)</option>
+        <option value="DE">Німеччина (DE)</option>
         <option value="FR">Франція (FR)</option>
         <option value="IT">Італія (IT)</option>
         <option value="ES">Іспанія (ES)</option>
+        <option value="CA">Канада (CA)</option>
+        <option value="AU">Австралія (AU)</option>
       </select>
     </div>
     <div id="shopifyOpts" class="hidden">
@@ -234,7 +238,7 @@ speaker,amazon,60,25,6,0,false,0</textarea>
 <script>
 "use strict";
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
-const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS } = window.ML_FEES;
+const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
 
 const $ = id => document.getElementById(id);
@@ -259,6 +263,14 @@ function setFxRates(rates) {
   }
 }
 const FX_CACHE_KEY = "ml_fx_cache", FX_TTL_MS = 24 * 3600e3;
+// JS mirror of fees.py etsy_payment_terms(): regional payment processing
+// (pct + fixed USD) by seller country; unknown country -> US default rate.
+function etsyPaymentTerms(country) {
+  let c = (country || "").trim().toUpperCase();
+  if (c === "UK") c = "GB";  // alias used in Etsy docs
+  const r = ETSY_REGIONAL[c];
+  return r ? [r.payment_pct, r.payment_fixed_usd] : [ETSY.payPct, ETSY.payFixed];
+}
 async function refreshFxRates() {
   try {
     const cached = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || "null");
@@ -323,9 +335,10 @@ function feesFor(inp) {
   const base = inp.price + inp.shipping_charged;
   const fees = {};
   if (inp.platform === "etsy") {
+    const [payPct, payFixedUsd] = etsyPaymentTerms(inp.country);
     fees["Listing fee"] = fixedCur(ETSY.listing, inp.currency) * inp.units;
     fees["Transaction 6.5%"] = ETSY.transaction * base;
-    fees["Payment 3% + $0.25"] = ETSY.payPct * base + fixedCur(ETSY.payFixed, inp.currency);
+    fees["Payment " + (payPct * 100).toFixed(1) + "%"] = payPct * base + fixedCur(payFixedUsd, inp.currency);
     if (inp.offsite_ads) fees["Offsite Ads 15%"] = ETSY.offsiteAds * base;
     if (inp.etsy_ads) fees["Etsy Ads 12.5%"] = ETSY.ads * base;
     if (REGULATORY_COUNTRIES.includes(inp.country)) fees["Regulatory fee 0.32%"] = ETSY.regulatory * base;
@@ -354,8 +367,10 @@ function feesFor(inp) {
 
 function pctTotal(inp) {
   let p = 0;
-  if (inp.platform === "etsy") { p = ETSY.transaction + ETSY.payPct + (inp.offsite_ads ? ETSY.offsiteAds : 0) + (inp.etsy_ads ? ETSY.ads : 0) + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0); }
-  else if (inp.platform === "shopify") { p = SHOPIFY.payPct; }
+  if (inp.platform === "etsy") {
+    const [payPct] = etsyPaymentTerms(inp.country);
+    p = ETSY.transaction + payPct + (inp.offsite_ads ? ETSY.offsiteAds : 0) + (inp.etsy_ads ? ETSY.ads : 0) + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0);
+  } else if (inp.platform === "shopify") { p = SHOPIFY.payPct; }
   else if (inp.platform === "amazon") { p = AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default; }
   else if (inp.platform === "ebay") { p = EBAY.finalValuePct; }
   else if (inp.platform === "vinted") { p = 0; }
@@ -365,7 +380,10 @@ function pctTotal(inp) {
 }
 
 function fixedFees(inp) {
-  if (inp.platform === "etsy") return fixedCur(ETSY.listing, inp.currency) * inp.units + fixedCur(ETSY.payFixed, inp.currency);
+  if (inp.platform === "etsy") {
+    const [, payFixedUsd] = etsyPaymentTerms(inp.country);
+    return fixedCur(ETSY.listing, inp.currency) * inp.units + fixedCur(payFixedUsd, inp.currency);
+  }
   if (inp.platform === "shopify") {
     let f = fixedCur(SHOPIFY.payFixed, inp.currency);
     if (inp.shopify_monthly_fee > 0 && inp.shopify_monthly_orders > 0)
@@ -440,7 +458,8 @@ function adProfit(inp, adSpend, adOrders) {
   const revenue = inp.price + inp.shipping_charged;
   let pct;
   if (inp.platform === "etsy") {
-    pct = ETSY.transaction + ETSY.payPct + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0);
+    const [payPct] = etsyPaymentTerms(inp.country);
+    pct = ETSY.transaction + payPct + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0);
   } else if (inp.platform === "shopify") pct = SHOPIFY.payPct;
   else if (inp.platform === "ebay") pct = EBAY.finalValuePct;
   else if (inp.platform === "vinted") pct = 0;

@@ -232,14 +232,15 @@ class TestEtsyAdsAndRegulatory:
 
     def test_full_stack_with_ads_and_regulatory(self):
         r = calculate(m(etsy_ads=True, country="GB"))
-        # fees: 0.20 + 2.275 + 1.30 + 4.375 + 0.112 = 8.262
-        assert r.total_fees == pytest.approx(0.20 + 2.275 + 1.30 + 4.375 + 0.112, abs=0.01)
-        assert r.net_profit == pytest.approx(35 - 8.262 - 8 - 4, abs=0.01)
+        # fees: 0.20 + 2.275 + 1.64 (GB regional 4% + ~$0.24) + 4.375 + 0.112 = 8.602
+        assert r.total_fees == pytest.approx(0.20 + 2.275 + 1.64 + 4.375 + 0.112, abs=0.01)
+        assert r.net_profit == pytest.approx(35 - 8.602 - 8 - 4, abs=0.01)
 
     def test_breakeven_with_ads_and_regulatory(self):
-        # pct_total = 0.065 + 0.03 + 0.125 + 0.0032 = 0.2232; denom = 0.7768
-        # need = 12.45 -> total = 16.0275; price = 11.0275 -> 11.03
-        assert breakeven_price(m(etsy_ads=True, country="UK")) == pytest.approx(11.03, abs=0.01)
+        # pct_total = 0.065 + 0.04 (GB regional) + 0.125 + 0.0032 = 0.2332
+        # denom = 0.7668; need = 8 + 4 + 0.20 + 0.24 = 12.44 -> total = 16.2226;
+        # price = 16.2226 - 5 = 11.22
+        assert breakeven_price(m(etsy_ads=True, country="UK")) == pytest.approx(11.22, abs=0.01)
 
     def test_csv_new_columns(self):
         rows = parse_csv(
@@ -410,9 +411,11 @@ class TestAdProfit:
         assert a["profit"] < 0
 
     def test_regulatory_included_in_contribution(self):
-        base = ad_profit(m(), 10.0, 1)["contribution_per_order"]
-        reg = ad_profit(m(country="FR"), 10.0, 1)["contribution_per_order"]
-        assert base - reg == pytest.approx(0.0032 * 35, abs=0.001)
+        # DE and FR share the same regional payment terms (4% + ~$0.33), so
+        # the FR-vs-DE delta isolates the 0.32% regulatory operating fee
+        de = ad_profit(m(country="DE"), 10.0, 1)["contribution_per_order"]
+        fr = ad_profit(m(country="FR"), 10.0, 1)["contribution_per_order"]
+        assert de - fr == pytest.approx(0.0032 * 35, abs=0.001)
 
     def test_shopify_contribution(self):
         # revenue 35; pct 0.029; fixed 0.30 -> 35*0.971 - 0.30 - 12 = 21.685
