@@ -1,0 +1,60 @@
+name: iOS Build (unsigned)
+
+# Margin Lens — SPA без бекенда: бандл = index.html + core/, збирається в
+# unsigned .app (сертифіката Apple Developer немає — встановлення через
+# AltStore/Sideloadly, re-sign кожні 7 днів). Повністю офлайн.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Stage web bundle (index.html + core/)
+        run: npm ci && npm run build
+
+      # cap copy (НЕ sync): bundle id io.github.xydik1otto.margin-lens закомічений.
+      - name: Copy web assets into iOS project
+        run: npx cap copy ios
+
+      - name: Build unsigned .app (iPhone, iOS 14+)
+        run: |
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -sdk iphoneos \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" \
+            -derivedDataPath build
+
+      - name: Package .app for AltStore/Sideloadly
+        run: |
+          cd build/Build/Products/Release-iphoneos
+          zip -qry margin-lens-ios-unsigned.zip App.app
+
+      - name: Upload unsigned app artifact (30 днів)
+        uses: actions/upload-artifact@v4
+        with:
+          name: margin-lens-ios-unsigned
+          path: build/Build/Products/Release-iphoneos/margin-lens-ios-unsigned.zip
+          retention-days: 30
+
+      - name: Attach unsigned app to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Build/Products/Release-iphoneos/margin-lens-ios-unsigned.zip
