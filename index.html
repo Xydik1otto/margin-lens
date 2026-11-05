@@ -171,9 +171,12 @@ speaker,amazon,60,25,6,0,false,0</textarea>
 <!-- SCENARIOS -->
 <div id="panel-scenarios" class="hidden">
   <div class="card">
-    <h2>Збережені сценарії (localStorage)</h2>
+    <h2>Збережені сценарії (IndexedDB)</h2>
     <div id="scenariosList"></div>
-    <button class="secondary" style="margin-top:10px" onclick="if(confirm('Видалити всі сценарії?')){localStorage.removeItem('ml_scenarios');renderScenarios();}">Очистити все</button>
+    <button class="secondary" style="margin-top:10px" onclick="clearAllScenarios()">Очистити все</button>
+    <button class="secondary" style="margin-top:10px" onclick="exportProfileJson()">⬇ Експорт профілю (JSON)</button>
+    <button class="secondary" style="margin-top:10px" onclick="document.getElementById('importFile').click()">⬆ Імпорт профілю (JSON)</button>
+    <input id="importFile" type="file" accept=".json,application/json" style="display:none" onchange="if(this.files[0]) importProfileJson(this.files[0]); this.value=''">
   </div>
 </div>
 
@@ -386,6 +389,7 @@ function render() {
 
 function runBatch() {
   const text = $("csv").value.trim();
+  try { localStorage.setItem("ml_batch_csv", text); } catch (e) { /* quota */ }
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) { $("batchOut").innerHTML = "<p class='muted'>Додайте заголовок і хоч один рядок.</p>"; return; }
   const header = lines[0].split(",").map(h => h.trim().toLowerCase());
@@ -429,14 +433,175 @@ function renderCompare() {
   $("compareOut").innerHTML = "<table><tr><th>Канал</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>" + html + "</table>";
 }
 
+// ------------------------------------------------------------------
+// Storage: IndexedDB (large batches) with localStorage fallback.
+// Migration: on first load, localStorage.ml_scenarios -> IndexedDB.
+// ------------------------------------------------------------------
+
+const IDB_NAME = "margin-lens", IDB_VERSION = 1;
+const STORE_SCEN = "scenarios", STORE_KV = "kv";
+let _idbPromise = null, _scenarioCache = [];
+
+function openDb() {
+  if (!("indexedDB" in window)) return Promise.reject(new Error("no indexedDB"));
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_SCEN)) db.createObjectStore(STORE_SCEN, { keyPath: "id", autoIncrement: true });
+      if (!db.objectStoreNames.contains(STORE_KV)) db.createObjectStore(STORE_KV);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _idbPromise;
+}
+
+function idbAll(store) {
+  return openDb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(store, "readonly");
+    const rq = tx.objectStore(store).getAll();
+    rq.onsuccess = () => res(rq.result || []);
+    rq.onerror = () => rej(rq.error);
+  }));
+}
+
+function idbPut(store, value, key) {
+  return openDb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    const rq = key === undefined ? tx.objectStore(store).add(value) : tx.objectStore(store).put(value, key);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  }));
+}
+
+function idbDelete(store, key) {
+  return openDb().then(db => new Promise((res, rej) => {
+    const rq = db.transaction(store, "readwrite").objectStore(store).delete(key);
+    rq.onsuccess = () => res();
+    rq.onerror = () => rej(rq.error);
+  }));
+}
+
+function idbClear(store) {
+  return openDb().then(db => new Promise((res, rej) => {
+    const rq = db.transaction(store, "readwrite").objectStore(store).clear();
+    rq.onsuccess = () => res();
+    rq.onerror = () => rej(rq.error);
+  }));
+}
+
+async function migrateToIdb() {
+  try {
+    const raw = localStorage.getItem("ml_scenarios");
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    if (!Array.isArray(all) || !all.length) return;
+    const existing = await idbAll(STORE_SCEN);
+    if (existing.length === 0) {
+      for (const s of all) await idbPut(STORE_SCEN, { name: s.name, ts: s.ts, inp: s.inp, result: s.result });
+    }
+    localStorage.removeItem("ml_scenarios");
+    localStorage.setItem("ml_migrated_idb", "1");
+  } catch (e) { /* idb unavailable — localStorage stays as fallback */ }
+}
+
+async function getScenarios() {
+  try {
+    const all = await idbAll(STORE_SCEN);
+    all.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    _scenarioCache = all;
+    return all;
+  } catch (e) {
+    _scenarioCache = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+    return _scenarioCache;
+  }
+}
+
 function saveScenario() {
   const inp = readInputs();
   const r = calculate(inp);
   const name = prompt("Назва сценарію:", `${inp.platform} @ $${inp.price}`);
   if (!name) return;
-  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
-  all.push({ name, ts: Date.now(), inp, result: { net: r.net, margin: r.margin, breakeven: r.breakeven } });
-  localStorage.setItem("ml_scenarios", JSON.stringify(all));
+  const rec = { name, ts: Date.now(), inp, result: { net: r.net, margin: r.margin, breakeven: r.breakeven } };
+  idbPut(STORE_SCEN, rec).then(() => renderScenarios())
+    .catch(() => {
+      const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+      all.push(rec);
+      localStorage.setItem("ml_scenarios", JSON.stringify(all));
+      renderScenarios();
+    });
+}
+
+function loadScenario(i) {
+  const s = _scenarioCache[i]; if (!s) return;
+  applyInputs(s.inp);
+  showTab("calc"); render();
+}
+
+function delScenario(i) {
+  const s = _scenarioCache[i]; if (!s) return;
+  idbDelete(STORE_SCEN, s.id).then(() => renderScenarios())
+    .catch(() => {
+      const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+      all.splice(i, 1);
+      localStorage.setItem("ml_scenarios", JSON.stringify(all));
+      renderScenarios();
+    });
+}
+
+async function renderScenarios() {
+  const all = await getScenarios();
+  if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>Поки порожньо. Збережіть сценарій у калькуляторі.</p>"; return; }
+  $("scenariosList").innerHTML = all.map((s, i) =>
+    `<div class="scenario" onclick="loadScenario(${i})"><span>${s.name} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><button class="secondary" onclick="event.stopPropagation();delScenario(${i})">✕</button></div>`).join("");
+}
+
+function clearAllScenarios() {
+  if (!confirm("Видалити всі сценарії?")) return;
+  idbClear(STORE_SCEN).catch(() => {}).finally(() => {
+    localStorage.removeItem("ml_scenarios");
+    renderScenarios();
+  });
+}
+
+// ------------------------------------------------------------------
+// Import/export JSON усього профілю (сценарії + batch)
+// ------------------------------------------------------------------
+
+async function exportProfileJson() {
+  const scenarios = await getScenarios();
+  const profile = {
+    app: "margin-lens", version: 2, exported: new Date().toISOString(),
+    scenarios: scenarios.map(({ id, ...s }) => s),
+    batch_csv: localStorage.getItem("ml_batch_csv") || "",
+  };
+  const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "margin-lens-profile.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function importProfileJson(file) {
+  try {
+    const profile = JSON.parse(await file.text());
+    if (profile.app !== "margin-lens") throw new Error("не profile-файл Margin Lens");
+    let imported = 0;
+    for (const s of (profile.scenarios || [])) {
+      if (!s || !s.inp) continue;
+      await idbPut(STORE_SCEN, { name: s.name || "імпорт", ts: s.ts || Date.now(), inp: s.inp, result: s.result || {} });
+      imported++;
+    }
+    if (typeof profile.batch_csv === "string" && profile.batch_csv) {
+      localStorage.setItem("ml_batch_csv", profile.batch_csv);
+      const ta = $("csv"); if (ta) ta.value = profile.batch_csv;
+    }
+    alert(`Імпортовано сценаріїв: ${imported}`);
+    renderScenarios();
+  } catch (e) { alert("Помилка імпорту: " + e.message); }
 }
 
 // ------------------------------------------------------------------
@@ -552,30 +717,16 @@ function applyInputs(inp) {
   $("perItemFee").checked = !!inp.amazon_per_item_fee;
 }
 
-function loadScenario(i) {
-  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
-  const s = all[i]; if (!s) return;
-  applyInputs(s.inp);
-  showTab("calc"); render();
-}
-
-function renderScenarios() {
-  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
-  if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>Поки порожньо. Збережіть сценарій у калькуляторі.</p>"; return; }
-  $("scenariosList").innerHTML = all.map((s, i) =>
-    `<div class="scenario" onclick="loadScenario(${i})"><span>${s.name} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><button class="secondary" onclick="event.stopPropagation();delScenario(${i})">✕</button></div>`).join("");
-}
-
-function delScenario(i) {
-  const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
-  all.splice(i, 1); localStorage.setItem("ml_scenarios", JSON.stringify(all)); renderScenarios();
-}
-
 // Patch showTab to also refresh comparison & ads panels
 const _showTab = showTab;
 showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
+try {
+  const savedCsv = localStorage.getItem("ml_batch_csv");
+  if (savedCsv) $("csv").value = savedCsv;
+} catch (e) { /* storage unavailable */ }
+migrateToIdb();       // one-time migration: localStorage scenarios -> IndexedDB
 render();
 </script>
 </body>
