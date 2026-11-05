@@ -68,6 +68,10 @@
 </head>
 <body>
 <h1>Margin Lens</h1>
+<div style="position:absolute;top:24px;right:24px" role="group" aria-label="Мова / Language">
+  <button id="lang-uk" class="secondary btn-sm" onclick="setLang('uk')" aria-label="Українська мова">UA</button>
+  <button id="lang-en" class="secondary btn-sm" onclick="setLang('en')" aria-label="English language">EN</button>
+</div>
 <p class="sub">Калькулятор зборів та реальної маржі для Etsy / Shopify / Amazon / eBay / Vinted. Дані зберігаються локально (IndexedDB/localStorage) — ніякого бекенду.</p>
 
 <div class="tabs">
@@ -244,6 +248,130 @@ speaker,amazon,60,25,6,0,false,0</textarea>
 // Fee constants are AUTO-GENERATED from core/fees.py (generate_js.py) — single source of truth.
 const { ETSY, SHOPIFY, AMAZON_REFERRAL, AMAZON_PER_ITEM, REGULATORY_COUNTRIES, ETSY_REGIONAL, EBAY, VINTED, DEPOP, POSHMARK, FX, SHIP_PRESETS } = window.ML_FEES;
 const CAT_LABELS = { default:"Інше (15%)", electronics:"Електроніка (8%)", home_kitchen:"Дім і кухня (15%)", clothing:"Одяг (17%)", books:"Книги (15%)", toys_games:"Іграшки (15%)", beauty:"Краса (8%)", grocery:"Продукти (18%)", jewelry:"Прикраси (20%)", furniture:"Меблі (15%)" };
+
+// ------------------------------------------------------------------
+// i18n: перемикач UA/EN. Словники — JSON-подібні об'єкти; ключі —
+// оригінальні українські рядки. Авто-детект navigator.language,
+// вибір зберігається в localStorage (ml_lang). Російської немає і
+// не буде (політичне рішення).
+// ------------------------------------------------------------------
+const I18N = {
+  en: {
+    // tabs
+    "Калькулятор": "Calculator", "Batch CSV": "Batch CSV",
+    "Порівняння каналів": "Channel comparison", "Ad Profit": "Ad Profit", "Сценарії": "Scenarios",
+    // subtitle
+    "Калькулятор зборів та реальної маржі для Etsy / Shopify / Amazon / eBay / Vinted. Дані зберігаються локально (IndexedDB/localStorage) — ніякого бекенду.":
+      "Fee & real-margin calculator for Etsy / Shopify / Amazon / eBay / Vinted. Data stays on your device (IndexedDB/localStorage) — no backend.",
+    // calc form
+    "Вхідні дані": "Inputs", "Платформа": "Platform", "Валюта": "Currency",
+    "Ціна товару": "Item price", "Собівартість": "Cost of goods",
+    "Доставка: ви платите": "Shipping: you pay", "Доставка: покупець платить": "Shipping: customer pays",
+    "Регіон доставки (пресет Etsy)": "Shipping region (Etsy preset)",
+    "VAT/PDV (%)": "VAT (%)", "Повернення (%)": "Returns (%)", "Кількість в замовленні": "Units per order",
+    "Offsite Ads (15%)": "Offsite Ads (15%)", "Etsy Ads (12.5%)": "Etsy Ads (12.5%)",
+    "Країна продавця (payment processing + regulatory fee)": "Seller country (payment processing + regulatory fee)",
+    "— інша (базова ставка 3% + $0.25) —": "— other (base rate 3% + $0.25) —",
+    "США (US)": "USA (US)", "UK (GB)": "UK (GB)", "Німеччина (DE)": "Germany (DE)",
+    "Франція (FR)": "France (FR)", "Італія (IT)": "Italy (IT)", "Іспанія (ES)": "Spain (ES)",
+    "Канада (CA)": "Canada (CA)", "Австралія (AU)": "Australia (AU)",
+    "Місячна підписка ($)": "Monthly subscription ($)", "Замовлень/місяць": "Orders/month",
+    "Категорія Amazon (referral %)": "Amazon category (referral %)",
+    "Індивідуальний план ($0.99/товар)": "Individual plan ($0.99/item)",
+    // result card
+    "Результат": "Result", "Net profit": "Net profit", "Margin": "Margin",
+    "Breakeven ціна": "Breakeven price", "Збори + податок": "Fees + tax",
+    "Компонент": "Component", "Сума": "Amount", "Всього зборів": "Total fees",
+    "VAT/PDV": "VAT", "What if: підняти ціну на": "What if: raise price by",
+    "💾 Зберегти сценарій": "💾 Save scenario", "⬇ CSV сценарію": "⬇ Scenario CSV",
+    "⬇ CSV порівняння": "⬇ Comparison CSV", "🔗 Поділитись лінком": "🔗 Share link",
+    // platform notes
+    "eBay: final value fee ~13.25% від (ціна + доставка) + $0.40 за замовлення.":
+      "eBay: final value fee ~13.25% of (price + shipping) + $0.40 per order.",
+    "Vinted: комісія продавця 0%. Buyer protection оплачує покупець. Доставка — покупець (або з вашого гаманця, якщо ви даєте знижку на доставку — введіть її як «ви платите»).":
+      "Vinted: 0% seller commission. Buyer protection is paid by the buyer. Shipping is on the buyer (or from your wallet if you discount shipping — enter it as \"you pay\").",
+    "Depop: flat 10% від загальної суми продажу (товар + доставка, яку платить покупець). Payment processing (~3.3% + $0.45 у США) не входить у пресет — за потреби закладіть його в собівартість.":
+      "Depop: flat 10% of the total sale (item + customer-paid shipping). Payment processing (~3.3% + $0.45 in the US) is not part of the preset — fold it into your costs if needed.",
+    "Poshmark: комісія з ціни товару — $2.95 за товар < $15, 20% від ціни за $15+. Доставка — prepaid-лабел покупця, на збори продавця не впливає.":
+      "Poshmark: commission on the item price — $2.95 under $15, 20% at $15+. Shipping is the buyer's prepaid label; it never touches the seller's fees.",
+    // batch
+    "Batch-режим: вставте CSV": "Batch mode: paste CSV",
+    "Колонки: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, etsy_ads, country, vat_percent, return_rate_pct, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]":
+      "Columns: name, platform, price, product_cost, shipping_paid, shipping_charged [, offsite_ads, etsy_ads, country, vat_percent, return_rate_pct, units, shopify_monthly_fee, shopify_monthly_orders, amazon_category, amazon_per_item_fee]",
+    "Розрахувати": "Calculate", "Назва": "Name",
+    "💾 Зберегти прогін в історію": "💾 Save run to history",
+    "📋 Copy as Markdown": "📋 Copy as Markdown",
+    "Додайте заголовок і хоч один рядок.": "Add a header and at least one row.",
+    "Рядків розраховано: ": "Rows calculated: ",
+    "Тренд маржі": "Margin trend", "п.п.": "pp",
+    "(перший прогін": "(first run", "→ останній": "→ last",
+    "Історія прогонів порожня — розрахуйте batch і натисніть «Зберегти прогін».":
+      "Run history is empty — run a batch and press \"Save run\".",
+    "Дата": "Date", "Товарів": "Items", "Сер. маржа": "Avg margin",
+    "Net разом": "Net total", "Кращий": "Best",
+    // duplicates
+    "Схожі товари на кількох платформах": "Same product on multiple platforms",
+    "платформи, розкид net: $": "platforms, net spread: $",
+    "⚖ Порівняти": "⚖ Compare",
+    "Дублікати між платформами не знайдено (порівнюються назви товарів: регістр/розділові знаки ігноруються).":
+      "No cross-platform duplicates found (titles are matched ignoring case/punctuation).",
+    // compare
+    "Порівняння каналів side-by-side": "Channel comparison side-by-side",
+    "Один товар — усі платформи.": "One item — all platforms.",
+    "Канал": "Channel", "Breakeven": "Breakeven",
+    // ad profit
+    "Ad Profit calculator (Etsy Ads ROAS)": "Ad Profit calculator (Etsy Ads ROAS)",
+    "Витрати на ads ($)": "Ad spend ($)", "Замовлень з ads": "Orders from ads",
+    "ROAS (факт)": "ROAS (actual)", "Break-even ROAS": "Break-even ROAS",
+    "Contribution / замовлення": "Contribution / order",
+    "Revenue / замовлення": "Revenue / order", "Revenue з ads (всього)": "Revenue from ads (total)",
+    "Max прибутковий ad spend": "Max profitable ad spend",
+    "Показник": "Metric", "Значення": "Value",
+    // scenarios
+    "Збережені сценарії (IndexedDB)": "Saved scenarios (IndexedDB)",
+    "Поки порожньо. Збережіть сценарій у калькуляторі.": "Empty for now. Save a scenario from the calculator.",
+    "Очистити все": "Clear all", "⬇ Експорт профілю (JSON)": "⬇ Export profile (JSON)",
+    "⬆ Імпорт профілю (JSON)": "⬆ Import profile (JSON)",
+    // misc
+    "Помилка: ": "Error: ",
+    "Немає обов'язкових колонок: ": "Missing required columns: ",
+  },
+};
+const I18N_KEY = "ml_lang";
+let _lang = (() => {
+  try {
+    const saved = localStorage.getItem(I18N_KEY);
+    if (saved === "en" || saved === "uk") return saved;
+  } catch (e) { /* storage unavailable */ }
+  return (navigator.language || "").toLowerCase().startsWith("en") ? "en" : "uk";
+})();
+function t(uaText) { return _lang === "en" ? (I18N.en[uaText] ?? uaText) : uaText; }
+function applyI18n() {
+  document.documentElement.lang = _lang;
+  // static DOM: translate leaf nodes whose text exactly matches a dict key
+  for (const el of document.querySelectorAll("label,button,h1,h2,p,option,th,td")) {
+    if (el.children.length) {
+      // labels wrapping a checkbox/input: translate the trailing text node
+      if (el.tagName === "LABEL" && el.firstElementChild && el.firstElementChild.tagName === "INPUT") {
+        const last = el.childNodes[el.childNodes.length - 1];
+        if (last.nodeType === 3 && I18N.en[last.textContent.trim()] !== undefined)
+          last.textContent = (_lang === "en" ? I18N.en[last.textContent.trim()] : last.textContent).replace(/^\s*/, " ");
+      }
+      continue;
+    }
+    const txt = el.textContent.trim();
+    if (I18N.en[txt] !== undefined) el.textContent = _lang === "en" ? I18N.en[txt] : txt;
+  }
+  for (const b of [["lang-uk", "uk"], ["lang-en", "en"]])
+    $(b[0]).classList.toggle("active", _lang === b[1]);
+}
+function setLang(lang) {
+  _lang = lang === "en" ? "en" : "uk";
+  try { localStorage.setItem(I18N_KEY, _lang); } catch (e) { /* storage unavailable */ }
+  applyI18n();
+  render(); renderAds(); renderScenarios(); renderBatchHistory(); renderDuplicates();
+  if (_lastBatchRows.length) runBatch();
+}
 
 const $ = id => document.getElementById(id);
 const num = id => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
@@ -491,21 +619,21 @@ function renderAds() {
   const a = adProfit(inp, num("adSpend"), num("adOrders"));
   const cls = v => v >= 0 ? "pos" : "neg";
   $("adsMetrics").innerHTML = `
-    <div class="metric"><div class="v ${cls(a.profit)}">${money(a.profit)}</div><div class="k">Ad profit</div></div>
-    <div class="metric"><div class="v">${a.roas === null ? "—" : a.roas.toFixed(2)}</div><div class="k">ROAS (факт)</div></div>
-    <div class="metric"><div class="v">${a.breakeven_roas === null ? "—" : a.breakeven_roas.toFixed(2)}</div><div class="k">Break-even ROAS</div></div>
-    <div class="metric"><div class="v ${cls(a.contribution_per_order)}">${money(a.contribution_per_order)}</div><div class="k">Contribution / замовлення</div></div>`;
+    <div class="metric"><div class="v ${cls(a.profit)}">${money(a.profit)}</div><div class="k">${t("Ad profit")}</div></div>
+    <div class="metric"><div class="v">${a.roas === null ? "—" : a.roas.toFixed(2)}</div><div class="k">${t("ROAS (факт)")}</div></div>
+    <div class="metric"><div class="v">${a.breakeven_roas === null ? "—" : a.breakeven_roas.toFixed(2)}</div><div class="k">${t("Break-even ROAS")}</div></div>
+    <div class="metric"><div class="v ${cls(a.contribution_per_order)}">${money(a.contribution_per_order)}</div><div class="k">${t("Contribution / замовлення")}</div></div>`;
   const be = a.roas !== null && a.breakeven_roas !== null
     ? (a.roas >= a.breakeven_roas
         ? `<span class="pos">✓ ROAS ${a.roas.toFixed(2)} ≥ break-even ${a.breakeven_roas.toFixed(2)} — реклама прибуткова</span>`
         : `<span class="neg">✕ ROAS ${a.roas.toFixed(2)} &lt; break-even ${a.breakeven_roas.toFixed(2)} — реклама збиткова (max витрати: ${money(a.breakeven_spend)})</span>`)
     : "";
   $("adsDetail").innerHTML =
-    `<table><tr><th>Показник</th><th>Значення</th></tr>
-     <tr><td>Revenue / замовлення</td><td>${money(a.revenue_per_order)}</td></tr>
-     <tr><td>Contribution / замовлення</td><td>${money(a.contribution_per_order)}</td></tr>
-     <tr><td>Revenue з ads (всього)</td><td>${money(a.total_revenue)}</td></tr>
-     <tr><td>Max прибутковий ad spend</td><td>${money(a.breakeven_spend)}</td></tr></table>` +
+    `<table><tr><th>${t("Показник")}</th><th>${t("Значення")}</th></tr>
+     <tr><td>${t("Revenue / замовлення")}</td><td>${money(a.revenue_per_order)}</td></tr>
+     <tr><td>${t("Contribution / замовлення")}</td><td>${money(a.contribution_per_order)}</td></tr>
+     <tr><td>${t("Revenue з ads (всього)")}</td><td>${money(a.total_revenue)}</td></tr>
+     <tr><td>${t("Max прибутковий ad spend")}</td><td>${money(a.breakeven_spend)}</td></tr></table>` +
     (be ? `<p style="margin-top:8px">${be}</p>` : "");
 }
 
@@ -526,14 +654,14 @@ function render() {
   $("shipMargin").innerHTML = sm === 0 ? "" :
     `Маржа доставки: <span class="${cls(sm)}">${money(sm)}</span> (покупець платить ${money(inp.shipping_charged)}, ви платите ${money(inp.shipping_paid)})`;
   $("metrics").innerHTML = `
-    <div class="metric"><div class="v ${cls(r.net)}">${money(r.net)}</div><div class="k">Net profit</div></div>
-    <div class="metric"><div class="v ${cls(r.margin)}">${r.margin.toFixed(1)}%</div><div class="k">Margin</div></div>
-    <div class="metric"><div class="v">${r.breakeven === null ? "—" : money(r.breakeven)}</div><div class="k">Breakeven ціна</div></div>
-    <div class="metric"><div class="v">${money(r.totalFees + r.vat)}</div><div class="k">Збори + податок</div></div>`;
-  $("feesBreakdown").innerHTML = "<table><tr><th>Компонент</th><th>Сума</th></tr>" +
+    <div class="metric"><div class="v ${cls(r.net)}">${money(r.net)}</div><div class="k">${t("Net profit")}</div></div>
+    <div class="metric"><div class="v ${cls(r.margin)}">${r.margin.toFixed(1)}%</div><div class="k">${t("Margin")}</div></div>
+    <div class="metric"><div class="v">${r.breakeven === null ? "—" : money(r.breakeven)}</div><div class="k">${t("Breakeven ціна")}</div></div>
+    <div class="metric"><div class="v">${money(r.totalFees + r.vat)}</div><div class="k">${t("Збори + податок")}</div></div>`;
+  $("feesBreakdown").innerHTML = "<table><tr><th>" + t("Компонент") + "</th><th>" + t("Сума") + "</th></tr>" +
     Object.entries(r.fees).map(([k, v]) => `<tr><td>${k}</td><td>${money(v)}</td></tr>`).join("") +
-    (r.vat > 0 ? `<tr><td>VAT/PDV</td><td>${money(r.vat)}</td></tr>` : "") +
-    `<tr><td><b>Всього зборів</b></td><td><b>${money(r.totalFees)}</b></td></tr></table>` +
+    (r.vat > 0 ? `<tr><td>${t("VAT/PDV")}</td><td>${money(r.vat)}</td></tr>` : "") +
+    `<tr><td><b>${t("Всього зборів")}</b></td><td><b>${money(r.totalFees)}</b></td></tr></table>` +
   (r.returnRate > 0
     ? `<p style="margin-top:8px">З поверненнями ${r.returnRate}%: net <span class="${cls(r.netAdj)}">${money(r.netAdj)}</span>, margin ${r.marginAdj.toFixed(1)}% (без повернень: ${money(r.net)} / ${r.margin.toFixed(1)}%)</p>`
     : "");
@@ -550,14 +678,14 @@ function runBatch() {
   const text = $("csv").value.trim();
   try { localStorage.setItem("ml_batch_csv", text); } catch (e) { /* quota */ }
   const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) { $("batchOut").innerHTML = "<p class='muted'>Додайте заголовок і хоч один рядок.</p>"; return; }
+  if (lines.length < 2) { $("batchOut").innerHTML = "<p class='muted'>" + t("Додайте заголовок і хоч один рядок.") + "</p>"; return; }
   const header = lines[0].split(",").map(h => h.trim().toLowerCase());
   const idx = n => header.indexOf(n);
   const req = ["platform", "price", "product_cost", "shipping_paid", "shipping_charged"];
-  if (req.some(c => idx(c) < 0)) { $("batchOut").innerHTML = "<p class='neg'>Немає обов'язкових колонок: " + req.join(", ") + "</p>"; return; }
+  if (req.some(c => idx(c) < 0)) { $("batchOut").innerHTML = "<p class='neg'>" + t("Немає обов'язкових колонок: ") + req.join(", ") + "</p>"; return; }
   const get = (row, n, d) => { const i = idx(n); const v = i >= 0 && row[i] !== undefined && row[i].trim() !== "" ? row[i].trim() : d; return v; };
   const flag = (row, n) => ["1","true","yes","y","так","on"].includes(get(row, n, "").toLowerCase());
-  let html = "<table><tr><th>Назва</th><th>Платформа</th><th>Revenue</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>";
+  let html = "<table><tr><th>" + t("Назва") + "</th><th>" + t("Платформа") + "</th><th>Revenue</th><th>" + t("Збори") + "</th><th>Net</th><th>Margin</th><th>" + t("Breakeven") + "</th></tr>";
   let count = 0;
   const batchRows = [];
   for (const line of lines.slice(1)) {
@@ -587,9 +715,9 @@ function runBatch() {
         revenue: +r.revenue.toFixed(2), fees: +(r.totalFees + r.vat).toFixed(2),
         net: +r.net.toFixed(2), margin: +r.margin.toFixed(2), inp });
       html += `<tr><td>${escapeHtml(name)}</td><td>${inp.platform}</td><td>${money(r.revenue)}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`;
-    } catch (e) { html += `<tr><td colspan="7" class="neg">Помилка: ${escapeHtml(e.message)}</td></tr>`; }
+    } catch (e) { html += `<tr><td colspan="7" class="neg">${t("Помилка: ")}${escapeHtml(e.message)}</td></tr>`; }
   }
-  $("batchOut").innerHTML = html + "</table><p class='muted'>Рядків розраховано: " + count + "</p>"
+  $("batchOut").innerHTML = html + "</table><p class='muted'>" + t("Рядків розраховано: ") + count + "</p>"
     + (count ? `<button class="secondary btn-sm" style="margin-top:8px" onclick="saveBatchHistory()" aria-label="Зберегти цей прогін в історію">💾 Зберегти прогін в історію</button>
     <button class="secondary btn-sm" style="margin-top:8px;margin-left:8px" onclick="copyBatchMarkdown()" aria-label="Копіювати результати як Markdown-таблицю">📋 Copy as Markdown</button>` : "");
   _lastBatchRows = batchRows;
@@ -629,18 +757,18 @@ function renderDuplicates() {
   if (!el) return;
   const groups = findDuplicateGroups(_lastBatchRows);
   if (!groups.length) {
-    el.innerHTML = "<p class='muted' style='margin-top:14px'>Дублікати між платформами не знайдено (порівнюються назви товарів: регістр/розділові знаки ігноруються).</p>";
+    el.innerHTML = "<p class='muted' style='margin-top:14px'>" + t("Дублікати між платформами не знайдено (порівнюються назви товарів: регістр/розділові знаки ігноруються).") + "</p>";
     return;
   }
-  el.innerHTML = "<h2 style='margin-top:16px;font-size:1rem'>Схожі товари на кількох платформах</h2>" +
+  el.innerHTML = "<h2 style='margin-top:16px;font-size:1rem'>" + t("Схожі товари на кількох платформах") + "</h2>" +
     groups.map((g, gi) => {
       const best = g.reduce((b, r) => ((r.net || 0) > (b.net || 0) ? r : b));
       const spread = (Math.max(...g.map(r => r.net || 0)) - Math.min(...g.map(r => r.net || 0))).toFixed(2);
       const rows = g.map((r, ri) =>
         `<tr><td>${r.platform}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td>`
-        + `<td><button class="secondary btn-sm" onclick="compareDuplicate(${gi},${ri})" aria-label="Порівняти цей товар по всіх платформах">⚖ Порівняти</button></td></tr>`).join("");
-      return `<div style="margin-top:8px"><b>${escapeHtml(best.name)}</b> <span class="muted">— ${g.length} платформи, розкид net: $${spread}</span>`
-        + `<table><tr><th>Платформа</th><th>Net</th><th>Margin</th><th></th></tr>${rows}</table></div>`;
+        + `<td><button class="secondary btn-sm" onclick="compareDuplicate(${gi},${ri})" aria-label="Порівняти цей товар по всіх платформах">${t("⚖ Порівняти")}</button></td></tr>`).join("");
+      return `<div style="margin-top:8px"><b>${escapeHtml(best.name)}</b> <span class="muted">— ${g.length} ${t("платформи, розкид net: $")}${spread}</span>`
+        + `<table><tr><th>${t("Платформа")}</th><th>Net</th><th>${t("Margin")}</th><th></th></tr>${rows}</table></div>`;
     }).join("");
 }
 
@@ -744,7 +872,7 @@ async function renderBatchHistory() {
   const all = await getBatchHistory();
   const el = $("batchHistoryOut");
   if (!el) return;
-  if (!all.length) { el.innerHTML = "<p class='muted' style='margin-top:14px'>Історія прогонів порожня — розрахуйте batch і натисніть «Зберегти прогін».</p>"; return; }
+  if (!all.length) { el.innerHTML = "<p class='muted' style='margin-top:14px'>" + t("Історія прогонів порожня — розрахуйте batch і натисніть «Зберегти прогін».") + "</p>"; return; }
   // trend across runs (JS mirror of core.history.margin_trend)
   const pts = all.map(r => [r.ts, r.avg_margin]);
   const first = pts[0][1], last = pts[pts.length - 1][1];
@@ -752,9 +880,9 @@ async function renderBatchHistory() {
   const direction = pts.length < 2 || Math.abs(delta) <= 0.05 ? "flat" : (delta > 0 ? "up" : "down");
   const arrow = direction === "up" ? '<span class="pos">▲</span>' : direction === "down" ? '<span class="neg">▼</span>' : "—";
   el.innerHTML =
-    `<div style="margin-top:14px"><b>Тренд маржі</b> ${arrow} ${delta > 0 ? "+" : ""}${delta.toFixed(2)} п.п. (перший прогін ${first.toFixed(2)}% → останній ${last.toFixed(2)}%)`
+    `<div style="margin-top:14px"><b>${t("Тренд маржі")}</b> ${arrow} ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ${t("п.п.")} ${t("(перший прогін")} ${first.toFixed(2)}% ${t("→ останній")} ${last.toFixed(2)}%)`
     + marginTrendSvg(pts) + "</div>"
-    + `<table style="margin-top:8px"><tr><th>Дата</th><th>Товарів</th><th>Сер. маржа</th><th>Net разом</th><th>Кращий</th><th></th></tr>`
+    + `<table style="margin-top:8px"><tr><th>${t("Дата")}</th><th>${t("Товарів")}</th><th>${t("Сер. маржа")}</th><th>${t("Net разом")}</th><th>${t("Кращий")}</th><th></th></tr>`
     + all.map((r, i) => `<tr><td>${new Date(r.ts).toLocaleString()}</td><td>${r.count}</td><td>${r.avg_margin.toFixed(2)}%</td><td class="${r.total_net >= 0 ? "pos" : "neg"}">${money(r.total_net)}</td><td>${escapeHtml(r.best || "—")}</td><td><button class="secondary btn-sm" aria-label="Видалити прогін з історії" onclick="deleteBatchRun(${i})">✕</button></td></tr>`).join("")
     + `</table>`;
 }
@@ -777,7 +905,7 @@ function markdownTable(headers, rows) {
 
 function batchResultsMarkdown(rows, title) {
   const table = markdownTable(
-    ["Назва", "Платформа", "Revenue", "Збори", "Net", "Margin %"],
+    [t("Назва"), t("Платформа"), "Revenue", t("Збори"), "Net", t("Margin %")],
     rows.map(r => [r.name, r.platform, (r.revenue || 0).toFixed(2),
                    (r.fees || 0).toFixed(2), (r.net || 0).toFixed(2),
                    (r.margin || 0).toFixed(1)]));
@@ -786,7 +914,7 @@ function batchResultsMarkdown(rows, title) {
 
 function compareResultsMarkdown(rows, title) {
   const table = markdownTable(
-    ["Канал", "Збори", "VAT", "Net", "Margin %", "Breakeven"],
+    [t("Канал"), t("Збори"), "VAT", "Net", t("Margin %"), t("Breakeven")],
     rows.map(r => [r.platform, (r.fees || 0).toFixed(2), (r.vat || 0).toFixed(2),
                    (r.net || 0).toFixed(2), (r.margin || 0).toFixed(2),
                    r.breakeven === null || r.breakeven === undefined ? "—" : r.breakeven.toFixed(2)]));
@@ -818,7 +946,7 @@ async function copyToClipboard(text, okMsg) {
 
 function copyBatchMarkdown() {
   if (!_lastBatchRows.length) { alert("Немає результатів — спочатку натисніть «Розрахувати»."); return; }
-  copyToClipboard(batchResultsMarkdown(_lastBatchRows, "Margin Lens — результати"),
+  copyToClipboard(batchResultsMarkdown(_lastBatchRows, _lang === "en" ? "Margin Lens — results" : "Margin Lens — результати"),
     "✓ Markdown-таблицю скопійовано");
 }
 
@@ -829,7 +957,7 @@ function copyCompareMarkdown() {
     return { platform: p, fees: r.totalFees, vat: r.vat, net: r.net,
              margin: r.margin, breakeven: r.breakeven };
   });
-  copyToClipboard(compareResultsMarkdown(rows, "Margin Lens — порівняння каналів"),
+  copyToClipboard(compareResultsMarkdown(rows, _lang === "en" ? "Margin Lens — channel comparison" : "Margin Lens — порівняння каналів"),
     "✓ Markdown-таблицю скопійовано");
 }
 
@@ -841,7 +969,7 @@ function renderCompare() {
     `<tr><td>${p}</td><td>${money(r.totalFees + r.vat)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${money(r.net)}</td><td>${r.margin.toFixed(1)}%</td><td>${r.breakeven === null ? "—" : money(r.breakeven)}</td></tr>`
   ).join("");
   $("compareOut").innerHTML =
-    "<table><tr><th>Канал</th><th>Збори</th><th>Net</th><th>Margin</th><th>Breakeven</th></tr>" + html + "</table>" +
+    "<table><tr><th>" + t("Канал") + "</th><th>" + t("Збори") + "</th><th>Net</th><th>" + t("Margin") + "</th><th>" + t("Breakeven") + "</th></tr>" + html + "</table>" +
     compareBarChart(results);
 }
 
@@ -1013,7 +1141,7 @@ function renameLocal(i, name) {
 
 async function renderScenarios() {
   const all = await getScenarios();
-  if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>Поки порожньо. Збережіть сценарій у калькуляторі.</p>"; return; }
+  if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>" + t("Поки порожньо. Збережіть сценарій у калькуляторі.") + "</p>"; return; }
   $("scenariosList").innerHTML = all.map((s, i) =>
     `<div class="scenario" onclick="loadScenario(${i})"><span>${escapeHtml(s.name)} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><span><button class="secondary btn-sm" title="Перейменувати" aria-label="Перейменувати сценарій" onclick="event.stopPropagation();renameScenario(${i})">✎</button> <button class="secondary btn-sm" title="Видалити" aria-label="Видалити сценарій" onclick="event.stopPropagation();delScenario(${i})">✕</button></span></div>`).join("");
 }
@@ -1187,6 +1315,7 @@ const _showTab = showTab;
 showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
+applyI18n();          // UA/EN: apply saved or detected language
 try {
   const savedCsv = localStorage.getItem("ml_batch_csv");
   if (savedCsv) $("csv").value = savedCsv;
