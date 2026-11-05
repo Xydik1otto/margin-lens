@@ -259,6 +259,48 @@ def calculate(inp: FeeInputs) -> FeeResult:
     )
 
 
+def ad_profit(inp: FeeInputs, ad_spend: float, ad_orders: float) -> dict:
+    """Etsy Ads P&L: is the ad spend profitable at this ROAS?
+
+    Contribution per order = revenue - percent fees (transaction + payment +
+    regulatory, when applicable) - VAT - fixed fees - COGS - outgoing shipping.
+    The ad cost is modeled explicitly via `ad_spend`, so the 12.5% Etsy Ads
+    fee is NOT double-counted here.
+
+    breakeven_roas = revenue_per_order / contribution_per_order — the ROAS at
+    which the campaign stops losing money.
+    """
+    inp = inp.sanitized()
+    ad_spend = max(0.0, ad_spend)
+    ad_orders = max(0.0, ad_orders)
+    revenue = inp.price + inp.shipping_charged
+    pct = [ETSY["transaction_pct"], ETSY["payment_pct"]]
+    if inp.country in REGULATORY_COUNTRIES:
+        pct.append(ETSY["regulatory_pct"])
+    if inp.platform == "shopify":
+        pct = [SHOPIFY["payment_pct"]]
+    elif inp.platform == "amazon":
+        pct = [AMAZON_REFERRAL.get(inp.amazon_category.lower(), AMAZON_REFERRAL["default"])]
+    pct_total = sum(pct)
+    fixed = _fixed_fees(inp)
+    contribution = revenue * (1 - pct_total) - fixed - revenue * inp.vat_percent / 100.0 \
+        - inp.product_cost - inp.shipping_paid
+    total_revenue = ad_orders * revenue
+    profit = ad_orders * contribution - ad_spend
+    roas = (total_revenue / ad_spend) if ad_spend > 0 else None
+    breakeven_roas = (revenue / contribution) if contribution > 1e-9 else None
+    breakeven_spend = ad_orders * contribution
+    return {
+        "revenue_per_order": round(revenue, 2),
+        "contribution_per_order": round(contribution, 4),
+        "total_revenue": round(total_revenue, 2),
+        "roas": round(roas, 2) if roas is not None else None,
+        "breakeven_roas": round(breakeven_roas, 2) if breakeven_roas is not None else None,
+        "breakeven_spend": round(breakeven_spend, 2),
+        "profit": round(profit, 2),
+    }
+
+
 def raise_price(inp: FeeInputs, delta: float) -> FeeResult:
     """'What if I raise price by X' — recompute with price += delta."""
     return calculate(replace(inp, price=inp.price + delta))

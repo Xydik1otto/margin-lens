@@ -48,6 +48,7 @@
   <button id="tab-calc" class="active" onclick="showTab('calc')">Калькулятор</button>
   <button id="tab-batch" onclick="showTab('batch')">Batch CSV</button>
   <button id="tab-compare" onclick="showTab('compare')">Порівняння каналів</button>
+  <button id="tab-ads" onclick="showTab('ads')">Ad Profit</button>
   <button id="tab-scenarios" onclick="showTab('scenarios')">Сценарії</button>
 </div>
 
@@ -150,6 +151,20 @@ speaker,amazon,60,25,6,0,false,0</textarea>
     <h2>Порівняння каналів side-by-side</h2>
     <p class="muted">Один товар — три платформи.</p>
     <div id="compareOut"></div>
+  </div>
+</div>
+
+<!-- AD PROFIT -->
+<div id="panel-ads" class="hidden">
+  <div class="card">
+    <h2>Ad Profit calculator (Etsy Ads ROAS)</h2>
+    <p class="muted">Використовує вхідні дані з калькулятора (ціна, собівартість, доставка, VAT, країна). Витрати на рекламу задаються тут — 12.5% Etsy Ads fee не додається, щоб не рахувати рекламу двічі.</p>
+    <div class="row">
+      <div><label>Витрати на ads ($)</label><input id="adSpend" type="number" step="0.01" min="0" value="10.00" oninput="renderAds()"></div>
+      <div><label>Замовлень з ads</label><input id="adOrders" type="number" step="1" min="0" value="2" oninput="renderAds()"></div>
+    </div>
+    <div class="metrics" id="adsMetrics" style="margin-top:12px"></div>
+    <div id="adsDetail" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -282,11 +297,59 @@ function calculate(inp) {
 }
 
 function showTab(name) {
-  for (const t of ["calc", "batch", "compare", "scenarios"]) {
+  for (const t of ["calc", "batch", "compare", "ads", "scenarios"]) {
     $("panel-" + t).classList.toggle("hidden", t !== name);
     $("tab-" + t).classList.toggle("active", t === name);
   }
   if (name === "scenarios") renderScenarios();
+}
+
+// JS mirror of fees.py ad_profit() — contribution per ad-attributed order
+// minus explicit ad spend; breakeven ROAS = revenue / contribution.
+function adProfit(inp, adSpend, adOrders) {
+  const revenue = inp.price + inp.shipping_charged;
+  let pct;
+  if (inp.platform === "etsy") {
+    pct = ETSY.transaction + ETSY.payPct + (REGULATORY_COUNTRIES.includes(inp.country) ? ETSY.regulatory : 0);
+  } else if (inp.platform === "shopify") pct = SHOPIFY.payPct;
+  else pct = (AMAZON_REFERRAL[inp.amazon_category] ?? AMAZON_REFERRAL.default);
+  const fixed = fixedFees(inp);
+  const contribution = revenue * (1 - pct) - fixed - revenue * (inp.vat_percent || 0) / 100
+    - inp.product_cost - inp.shipping_paid;
+  const totalRevenue = adOrders * revenue;
+  const profit = adOrders * contribution - adSpend;
+  return {
+    revenue_per_order: revenue,
+    contribution_per_order: contribution,
+    total_revenue: totalRevenue,
+    roas: adSpend > 0 ? totalRevenue / adSpend : null,
+    breakeven_roas: contribution > 1e-9 ? revenue / contribution : null,
+    breakeven_spend: adOrders * contribution,
+    profit,
+  };
+}
+
+function renderAds() {
+  const inp = readInputs();
+  const a = adProfit(inp, num("adSpend"), num("adOrders"));
+  const cls = v => v >= 0 ? "pos" : "neg";
+  $("adsMetrics").innerHTML = `
+    <div class="metric"><div class="v ${cls(a.profit)}">${money(a.profit)}</div><div class="k">Ad profit</div></div>
+    <div class="metric"><div class="v">${a.roas === null ? "—" : a.roas.toFixed(2)}</div><div class="k">ROAS (факт)</div></div>
+    <div class="metric"><div class="v">${a.breakeven_roas === null ? "—" : a.breakeven_roas.toFixed(2)}</div><div class="k">Break-even ROAS</div></div>
+    <div class="metric"><div class="v ${cls(a.contribution_per_order)}">${money(a.contribution_per_order)}</div><div class="k">Contribution / замовлення</div></div>`;
+  const be = a.roas !== null && a.breakeven_roas !== null
+    ? (a.roas >= a.breakeven_roas
+        ? `<span class="pos">✓ ROAS ${a.roas.toFixed(2)} ≥ break-even ${a.breakeven_roas.toFixed(2)} — реклама прибуткова</span>`
+        : `<span class="neg">✕ ROAS ${a.roas.toFixed(2)} &lt; break-even ${a.breakeven_roas.toFixed(2)} — реклама збиткова (max витрати: ${money(a.breakeven_spend)})</span>`)
+    : "";
+  $("adsDetail").innerHTML =
+    `<table><tr><th>Показник</th><th>Значення</th></tr>
+     <tr><td>Revenue / замовлення</td><td>${money(a.revenue_per_order)}</td></tr>
+     <tr><td>Contribution / замовлення</td><td>${money(a.contribution_per_order)}</td></tr>
+     <tr><td>Revenue з ads (всього)</td><td>${money(a.total_revenue)}</td></tr>
+     <tr><td>Max прибутковий ad spend</td><td>${money(a.breakeven_spend)}</td></tr></table>` +
+    (be ? `<p style="margin-top:8px">${be}</p>` : "");
 }
 
 function render() {
@@ -508,9 +571,9 @@ function delScenario(i) {
   all.splice(i, 1); localStorage.setItem("ml_scenarios", JSON.stringify(all)); renderScenarios();
 }
 
-// Patch showTab to also refresh comparison table
+// Patch showTab to also refresh comparison & ads panels
 const _showTab = showTab;
-showTab = name => { _showTab(name); if (name === "compare") renderCompare(); };
+showTab = name => { _showTab(name); if (name === "compare") renderCompare(); if (name === "ads") renderAds(); };
 
 applyShareFromUrl();  // restore shared scenario from #p=... before first render
 render();

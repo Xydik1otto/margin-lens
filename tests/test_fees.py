@@ -364,3 +364,57 @@ class TestReturns:
             "etsy,30,8,4,5,50\n"
         )
         assert calculate(rows[0]).net_profit_adjusted == pytest.approx(3.5125, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# v0.2.x: ad profit calculator (Etsy Ads ROAS break-even)
+# ---------------------------------------------------------------------------
+
+from core.fees import ad_profit  # noqa: E402
+
+
+class TestAdProfit:
+    def test_contribution_per_order_etsy(self):
+        # revenue 35; pct = 0.065+0.03 = 0.095; fixed = 0.20+0.25 = 0.45
+        # contribution = 35*0.905 - 0.45 - 8 - 4 = 31.675 - 12.45 = 19.225 (== net, no ads fee)
+        a = ad_profit(m(), ad_spend=10.0, ad_orders=2)
+        assert a["contribution_per_order"] == pytest.approx(19.225, abs=0.01)
+
+    def test_breakeven_roas(self):
+        # breakeven_roas = 35 / 19.225 = 1.8205...
+        a = ad_profit(m(), ad_spend=10.0, ad_orders=2)
+        assert a["breakeven_roas"] == pytest.approx(35 / 19.225, abs=0.01)
+
+    def test_profit_positive_and_negative(self):
+        # 2 orders * 19.225 = 38.45 contribution; spend 10 -> +28.45
+        assert ad_profit(m(), 10.0, 2)["profit"] == pytest.approx(28.45, abs=0.01)
+        # spend above breakeven (2*19.225 = 38.45) -> loss
+        assert ad_profit(m(), 40.0, 2)["profit"] == pytest.approx(-1.55, abs=0.01)
+
+    def test_zero_profit_at_breakeven_spend(self):
+        a = ad_profit(m(), ad_spend=2 * 19.225, ad_orders=2)
+        assert a["profit"] == pytest.approx(0.0, abs=0.01)
+
+    def test_roas_fact(self):
+        # 2 orders * 35 revenue = 70; spend 10 -> ROAS 7.0
+        assert ad_profit(m(), 10.0, 2)["roas"] == pytest.approx(7.0, abs=0.01)
+
+    def test_no_spend_no_roas(self):
+        a = ad_profit(m(), ad_spend=0.0, ad_orders=2)
+        assert a["roas"] is None
+
+    def test_negative_contribution_no_breakeven(self):
+        # COGS+shipping higher than price -> contribution < 0 -> no break-even ROAS
+        a = ad_profit(m(price=5.0, product_cost=20.0, shipping_paid=10.0), 5.0, 1)
+        assert a["breakeven_roas"] is None
+        assert a["profit"] < 0
+
+    def test_regulatory_included_in_contribution(self):
+        base = ad_profit(m(), 10.0, 1)["contribution_per_order"]
+        reg = ad_profit(m(country="FR"), 10.0, 1)["contribution_per_order"]
+        assert base - reg == pytest.approx(0.0032 * 35, abs=0.001)
+
+    def test_shopify_contribution(self):
+        # revenue 35; pct 0.029; fixed 0.30 -> 35*0.971 - 0.30 - 12 = 21.685
+        a = ad_profit(m(platform="shopify"), 0.0, 1)
+        assert a["contribution_per_order"] == pytest.approx(21.685, abs=0.01)
