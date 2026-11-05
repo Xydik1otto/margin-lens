@@ -629,11 +629,34 @@ function delScenario(i) {
     });
 }
 
+async function renameScenario(i) {
+  const s = _scenarioCache[i]; if (!s) return;
+  const name = prompt("Нова назва сценарію:", s.name);
+  if (!name || name === s.name) return;
+  if (s.id !== undefined) {
+    try {
+      await idbPut(STORE_SCEN, { ...s, name }, s.id);
+    } catch (e) { renameLocal(i, name); }
+  } else renameLocal(i, name);
+  renderScenarios();
+}
+
+function renameLocal(i, name) {
+  try {
+    const all = JSON.parse(localStorage.getItem("ml_scenarios") || "[]");
+    if (all[i]) { all[i].name = name; localStorage.setItem("ml_scenarios", JSON.stringify(all)); }
+  } catch (e) { /* storage unavailable */ }
+}
+
 async function renderScenarios() {
   const all = await getScenarios();
   if (!all.length) { $("scenariosList").innerHTML = "<p class='muted'>Поки порожньо. Збережіть сценарій у калькуляторі.</p>"; return; }
   $("scenariosList").innerHTML = all.map((s, i) =>
-    `<div class="scenario" onclick="loadScenario(${i})"><span>${s.name} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><button class="secondary" onclick="event.stopPropagation();delScenario(${i})">✕</button></div>`).join("");
+    `<div class="scenario" onclick="loadScenario(${i})"><span>${escapeHtml(s.name)} <span class="muted">(${s.inp.platform}, net ${money(s.result.net)}, ${s.result.margin.toFixed(1)}%)</span></span><span><button class="secondary btn-sm" title="Перейменувати" aria-label="Перейменувати сценарій" onclick="event.stopPropagation();renameScenario(${i})">✎</button> <button class="secondary btn-sm" title="Видалити" aria-label="Видалити сценарій" onclick="event.stopPropagation();delScenario(${i})">✕</button></span></div>`).join("");
+}
+
+function escapeHtml(t) {
+  return String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 function clearAllScenarios() {
