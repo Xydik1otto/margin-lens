@@ -1,6 +1,8 @@
 # Margin Lens — калькулятор зборів та маржі для Etsy/Shopify/Amazon/eBay/Vinted
 
-![tests](https://img.shields.io/badge/tests-103%20passing-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) ![version](https://img.shields.io/badge/version-0.4.0-orange)
+![tests](https://img.shields.io/badge/tests-197%20passing-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) ![version](https://img.shields.io/badge/version-1.0.0-orange)
+
+**English documentation:** [README.en.md](README.en.md)
 
 **Live demo:** _плейсхолдер — після пушу: `https://bigpi.github.io/margin-lens/`_ (GitHub Pages → Settings → Pages → Source: GitHub Actions)
 
@@ -20,6 +22,18 @@ Margin Lens існує, щоб дати продавцю одне чесне ч�
 ## Що це
 
 SPA **без бекенда**: vanilla JS + IndexedDB/localStorage, один `index.html` — розгорнуто на GitHub Pages за $0.
+
+### v1.0.0 — готово для чужих користувачів
+
+- **Depop** — flat 10% від загальної суми продажу
+- **Poshmark** — $2.95 flat за товар < $15, 20% від ціни за $15+
+- **Etsy regional variations** — payment processing по країні продавця (US/GB/DE/FR/IT/ES/CA/AU: 3–4.5% + локальний fixed fee)
+- **Batch-історія з трендом маржі** — прогони зберігаються в IndexedDB, SVG-sparkline тренду середньої маржі (delta у п.п.)
+- **Duplicate detection** — той самий товар на кількох платформах групується; порівняння в один клік
+- **Copy as Markdown** — результати/порівняння як GFM-таблиця для постів і звітів
+- **i18n UA/EN** — перемикач у UI, авто-детект мови браузера, збереження вибору
+- **README.en.md + INSTALL.md** — англійська документація та покрокова інструкція для не-програміста
+- **A11y** — focus-visible, клавіатурна навігація, aria-labels
 
 ### v0.4.0 — мультивалюта та нові платформи
 
@@ -78,19 +92,40 @@ margin-lens/
 ├── index.html              # SPA (калькулятор + batch + порівняння + сценарії)
 ├── core/fees.py            # чисті функції розрахунку зборів (джерело правди)
 ├── core/fx.py              # мультивалюта: курси ECB, кеш, офлайн-фолбек
+├── core/history.py         # batch-історія: тренд маржі + summary прогонів
+├── core/dedupe.py          # duplicate detection товару між платформами
+├── core/md_export.py       # експорт результатів як Markdown-таблиця
 ├── core/fees.generated.js  # АВТО-ГЕНЕРОВАНО з fees.py (generate_js.py)
 ├── generate_js.py          # генератор JS-констант (--check для верифікації)
 ├── scripts/smoke.sh        # smoke: HTML parse + pytest + sync check
+├── INSTALL.md              # покрокова інструкція для не-програміста
+├── CONTRIBUTING.md         # як долучитися (тарифи — найчастіший PR)
 ├── CHANGELOG.md            # Keep a Changelog
 ├── .github/workflows/deploy.yml  # автодеплой на GitHub Pages (push → main)
 ├── .github/FUNDING.yml
-└── tests/                  # test_fees.py, test_fx.py, test_currency.py, test_ebay_vinted.py
+└── tests/                  # test_fees, test_fx, test_currency, test_ebay_vinted,
+                            # test_depop_poshmark, test_etsy_regional, test_history,
+                            # test_dedupe, test_md_export, test_i18n, test_a11y
 ```
 
 ## Deploy
 
 Push у `main` → workflow `deploy.yml` автоматично публікує статику на GitHub Pages (actions/deploy-pages@v4, без збірки). `.nojekyll` вимикає Jekyll-обробку.
 
+## Contributing
+
+PRs вітаються — **особливо оновлення тарифів платформ** (це найчастіший
+зовнішній внесок): редагуєте константи в `core/fees.py` + коментар «last
+verified», запускаєте `python generate_js.py`, оновлюєте exact-number тести,
+`pytest` + `scripts/smoke.sh` зелені. Повна інструкція —
+[CONTRIBUTING.md](CONTRIBUTING.md). Баги/фічі — через шаблони issue
+(укр/eng); security — [SECURITY.md](SECURITY.md). Російська локалізація
+не приймається.
+
+**Рекомендовані GitHub topics** (Topics → редагувати в налаштуваннях репо):
+`etsy` `shopify` `ebay` `vinted` `seller-tools` `ecommerce` `calculator` `github-pages`
+(+ `depop` `poshmark` `margin-calculator` `fee-calculator` `vanilla-js` за бажанням)
+
 ## Дисклеймер
 
-Тарифи зафіксовані станом на 2025 рік і змінюються платформами. Дані про збори — у відкритих тарифних сторінках Etsy/Shopify/Amazon/eBay/Vinted; оновлюйте константи в `core/fees.py` і запускайте `python generate_js.py`. Курси валют — довідкові (ECB); фолбек-константи — наближені.
+Тарифи — з відкритих тарифних сторінок платформ (остання перевірка: 2026-11-05, дати зазначені в коментарях `core/fees.py`) і змінюються платформами; оновлюйте константи в `core/fees.py` і запускайте `python generate_js.py`. Курси валют — довідкові (ECB); фолбек-константи — наближені.

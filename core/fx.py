@@ -8,7 +8,8 @@ The SPA works fully offline, so rates come in two layers:
    rates from the free ECB feed (no API key). Failures degrade gracefully:
    stale cache -> hardcoded fallback.
 
-Rates are EUR-based: 1 EUR = rate[code] units of ``code``.
+Rates are EUR-based: 1 EUR = rate[code] units of ``code``. Fallback rates
+last verified 2026-11-05.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from urllib.request import urlopen
 ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 CACHE_TTL_HOURS = 24
 
-# Offline fallback (approx. ECB reference rates, late 2025). EUR-based.
+# Offline fallback (approx. ECB reference rates; last verified 2026-11-05). EUR-based.
 FALLBACK_RATES: dict[str, float] = {
     "EUR": 1.0,
     "USD": 1.08,

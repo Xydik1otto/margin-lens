@@ -20,7 +20,7 @@ from core.fx import from_usd, normalize
 
 
 # ---------------------------------------------------------------------------
-# Platform fee structures (public, documented rates as of 2025)
+# Platform fee structures (public, documented rates; last verified 2026-11-05)
 # ---------------------------------------------------------------------------
 
 ETSY = {
@@ -37,8 +37,9 @@ ETSY = {
 REGULATORY_COUNTRIES = {"GB", "UK", "FR", "IT", "ES"}
 
 # Etsy payment processing varies by the seller's country of residence
-# (domestic rate, 2025). The fixed part is quoted in the seller's local
-# currency; we store USD approximations and convert with fixed_in_currency().
+# (domestic rate; last verified 2026-11-05). The fixed part is quoted in the
+# seller's local currency; we store USD approximations and convert with
+# fixed_in_currency().
 # A seller outside this table pays the default rate (ETSY["payment_pct"] /
 # ETSY["payment_fixed"] = 3% + $0.25, the US rate).
 ETSY_REGIONAL = {
@@ -68,7 +69,7 @@ def etsy_payment_terms(country: str) -> tuple[float, float]:
     return ETSY["payment_pct"], ETSY["payment_fixed"]
 
 
-# Typical Etsy shipping rates by region (small parcel, USD), 2025.
+# Typical Etsy shipping rates by region (small parcel, USD; verified 2026-11-05).
 # Used as one-click presets: what the seller pays vs what the customer pays.
 ETSY_SHIPPING_PRESETS = {
     "us_domestic":  {"label": "США (внутрішня)",  "paid": 4.00, "charged": 5.00},

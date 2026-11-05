@@ -113,4 +113,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Disclaimer
 
-Rates are fixed as of 2025 and change per platform; each constant block documents its "as of" date. Fee data comes from the public rate pages of Etsy/Shopify/Amazon/eBay/Vinted/Depop/Poshmark; update the constants in `core/fees.py` and run `python generate_js.py`. Exchange rates are indicative (ECB); the offline fallback constants are approximations.
+Rates are taken from the platforms' public fee pages (last verified 2026-11-05; the date is documented in the `core/fees.py` comments) and change over time; update the constants in `core/fees.py` and run `python generate_js.py`. Exchange rates are indicative (ECB); the offline fallback constants are approximations.
