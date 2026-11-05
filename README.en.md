@@ -99,6 +99,10 @@ margin-lens/
 └── tests/
 ```
 
+## Mobile apps (Android / iOS)
+
+Margin Lens ships as a native shell (Capacitor 7) around the same SPA: the app bundles **the `index.html` itself + `core/`** — **fully offline, no server needed**. The APK is built in CI (`.github/workflows/android-build.yml`, minSdk 24 → target 35); iOS is an unsigned build for AltStore/Sideloadly (`ios-build.yml`, iOS 14+; the App Store requires Apple Developer at $99/year — not in budget). Downloads from [Releases](../../releases); install and local-build instructions — [MOBILE.md](MOBILE.md).
+
 ## Deploy
 
 Push to `main` → the `deploy.yml` workflow publishes the static site to GitHub Pages (actions/deploy-pages@v4, no build step). `.nojekyll` disables Jekyll processing.

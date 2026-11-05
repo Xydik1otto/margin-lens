@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Added
+- **Мобільний порт (Capacitor 7)**: SPA без бекенда бандлиться в застосунок —
+  `index.html` + `core/fees.generated.js` у APK/IPA, **повністю офлайн, сервер
+  не потрібен**. Android: minSdk 24 → target 35, CI `android-build.yml` (APK на
+  кожен push + attach до Release на тег); iOS: deployment target 14.0, CI
+  `ios-build.yml` (unsigned `.app` для AltStore/Sideloadly, retention 30 днів).
+  appId `io.github.xydik1otto.margin-lens`; документація — `MOBILE.md` (UA+EN).
+
 ### Removed
 - Монетизаційний scaffolding: `.github/FUNDING.yml` (Sponsors-кнопка), секцію
   «Монетизація» з PLAN.md (Freemium/Pro-тарифи, конверсія free→Pro), згадку

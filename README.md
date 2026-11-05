@@ -102,10 +102,23 @@ margin-lens/
 ├── CONTRIBUTING.md         # як долучитися (тарифи — найчастіший PR)
 ├── CHANGELOG.md            # Keep a Changelog
 ├── .github/workflows/deploy.yml  # автодеплой на GitHub Pages (push → main)
+├── MOBILE.md                # мобільний порт: офлайн-bundle, встановлення APK/IPA
+├── capacitor.config.json    # Capacitor: appId io.github.xydik1otto.margin-lens
+├── android/, ios/           # нативні проєкти (Capacitor 7; CI-збірка в workflows)
 └── tests/                  # test_fees, test_fx, test_currency, test_ebay_vinted,
                             # test_depop_poshmark, test_etsy_regional, test_history,
                             # test_dedupe, test_md_export, test_i18n, test_a11y
 ```
+
+## Мобільні застосунки (Android / iOS)
+
+Margin Lens доступний як нативна оболонка (Capacitor 7) навколо того самого
+SPA: застосунок бандлить **сам `index.html` + `core/`** — **повністю офлайн,
+сервер не потрібен**. APK збирається в CI (`.github/workflows/android-build.yml`,
+minSdk 24 → target 35), iOS — unsigned-збірка для AltStore/Sideloadly
+(`ios-build.yml`, iOS 14+; App Store вимагає Apple Developer $99/рік — не в
+бюджеті). Завантаження з [Releases](../../releases), інструкції зі встановлення
+та локальної збірки — [MOBILE.md](MOBILE.md).
 
 ## Deploy
 
